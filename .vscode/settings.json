@@ -1,0 +1,23 @@
+{
+  "files.associations": {
+    // "anki_templates/*.html": "jinja-html",
+    "*.html": "jinja-html"
+  },
+  "specstory.cloudSync.enabled": "never",
+  "cSpell.words": [
+    "Anki",
+    "AnkiConnect",
+    "JSDoc",
+    "JSDoc-formatted",
+    "NotebookLM"
+  ],
+  "languageToolLinter.languageTool.disabledCategories": "EN_UNPAIRED_BRACKETS",
+  "languageToolLinter.languageTool.disabledRules": "ARROWS,UPPERCASE_SENTENCE_START,WHITESPACE_RULE",
+  "languageToolLinter.languageTool.ignoredWordsInWorkspace": [
+    "Anki",
+    "AnkiConnect",
+    "JSDoc",
+    "JSDoc-formatted",
+    "NotebookLM"
+  ]
+}
