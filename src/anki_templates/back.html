@@ -1,113 +1,276 @@
 <div id="layout-root" class="main-wrapper">
-    <div class="quiz-column">
-        <div class="quiz-content-wrapper">
-            <div class="question-text" id="back-q-text"></div>
-            <div class="options-list" id="back-options"></div>
-        </div>
-    </div>
+	<div class="quiz-column">
+		<div class="quiz-content-wrapper">
+			<div class="question-text" id="back-q-text"></div>
+			<div class="options-list" id="back-options"></div>
+			<div id="action-container"></div>
+		</div>
+	</div>
 
-    <div class="diagram-column" id="diagram-container">
-        {{ArchDiagram}}
-    </div>
+	<div class="diagram-column" id="diagram-container">{{ArchDiagram}}</div>
 </div>
 
-<div id="back-data" style="display:none;">
-    <div id="d-question">{{Question}}</div>
-    <div data-opt="A" data-text="{{Option1}}" data-flag="{{Flag1}}" data-reason="{{Rationale1}}"></div>
-    <div data-opt="B" data-text="{{Option2}}" data-flag="{{Flag2}}" data-reason="{{Rationale2}}"></div>
-    <div data-opt="C" data-text="{{Option3}}" data-flag="{{Flag3}}" data-reason="{{Rationale3}}"></div>
-    <div data-opt="D" data-text="{{Option4}}" data-flag="{{Flag4}}" data-reason="{{Rationale4}}"></div>
-    <div id="diagram-check">{{ArchDiagram}}</div>
+<div id="back-data" style="display: none">
+	<div id="d-question">{{Question}}</div>
+	<div
+		data-opt="A"
+		data-text="{{Option1}}"
+		data-flag="{{Flag1}}"
+		data-reason="{{Rationale1}}"
+	></div>
+	<div
+		data-opt="B"
+		data-text="{{Option2}}"
+		data-flag="{{Flag2}}"
+		data-reason="{{Rationale2}}"
+	></div>
+	<div
+		data-opt="C"
+		data-text="{{Option3}}"
+		data-flag="{{Flag3}}"
+		data-reason="{{Rationale3}}"
+	></div>
+	<div
+		data-opt="D"
+		data-text="{{Option4}}"
+		data-flag="{{Flag4}}"
+		data-reason="{{Rationale4}}"
+	></div>
+	<div id="diagram-check">{{ArchDiagram}}</div>
 </div>
 
 <script>
-(function() {
-    function cleanMath(str) {
-        if (!str) return "";
-        let s = str.replace(/\$\$(.*?)\$\$/gs, '\\[$1\\]');
-        s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, '\\($1\\)');
-        s = s.replace(/`([^`]+)`/g, '<code class="latex-snippet">$1</code>');
-        return s;
-    }
+	(function () {
+		// Manage background taps: prevent option clicks from natively advancing on mobile,
+		// but allow background and continue button clicks to natively advance.
+		setTimeout(() => {
+			const wrapper = document.querySelector(".main-wrapper");
+			if (wrapper) {
+				const intercept = (e) => {
+					const isOption = e.target.closest(".option-block");
+					if (isOption) {
+						e.stopPropagation();
+					} else {
+						// For background taps, simulate continue button click for Desktop/AnkiDroid.
+						// We do NOT stop propagation so AnkiMobile natively grades the card.
+						if (!e.target.closest(".continue-btn")) {
+							const continueBtn =
+								document.querySelector(".continue-btn");
+							if (continueBtn) {
+								continueBtn.click();
+							}
+						}
+					}
+				};
+				wrapper.addEventListener("click", intercept);
+				wrapper.addEventListener("touchend", intercept);
+			}
+		}, 0);
 
-    function triggerMath(element) {
-        if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
-            MathJax.typesetPromise([element]).catch(err => {});
-        } else if (typeof MathJax !== 'undefined' && MathJax.Hub) {
-            MathJax.Hub.Queue(["Typeset", MathJax.Hub, element]);
-        }
-    }
+		function cleanMath(str) {
+			if (!str) return "";
+			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
+			s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, "\\($1\\)");
+			s = s.replace(
+				/`([^`]+)`/g,
+				'<code class="latex-snippet">$1</code>',
+			);
+			return s;
+		}
 
-    try {
-        // Layout Logic
-        const diagramCheck = document.getElementById('diagram-check');
-        const diagramContent = diagramCheck ? diagramCheck.innerHTML.trim() : "";
-        const root = document.getElementById('layout-root');
-        const diagramCol = document.getElementById('diagram-container');
+		function triggerMath(element) {
+			if (typeof MathJax !== "undefined" && MathJax.typesetPromise) {
+				MathJax.typesetPromise([element]).catch((err) => {});
+			} else if (typeof MathJax !== "undefined" && MathJax.Hub) {
+				MathJax.Hub.Queue(["Typeset", MathJax.Hub, element]);
+			}
+		}
 
-        if (diagramContent.length > 0) {
-            root.classList.add('mode-split');
-            diagramCol.style.display = 'flex'; 
-        } else {
-            root.classList.add('mode-centered');
-            diagramCol.style.display = 'none'; 
-        }
-        
-        // Translate Question
-        const qRaw = document.getElementById('d-question').innerHTML;
-        document.getElementById('back-q-text').innerHTML = cleanMath(qRaw);
+		try {
+			// Retrieve and clear selection state from sessionStorage
+			let selectedOpt = null;
+			let selectedCorrect = null;
+			const qRawForId = document.getElementById("d-question").innerHTML;
+			const cardId = qRawForId
+				.substring(0, 50)
+				.replace(/[^a-zA-Z0-9]/g, "");
 
-        // Options Logic
-        const container = document.getElementById('back-options');
-        const dataItems = document.querySelectorAll('#back-data > div[data-opt]');
-        const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+			try {
+				selectedOpt = sessionStorage.getItem(
+					"notebooklm_sel_opt_" + cardId,
+				);
+				selectedCorrect = sessionStorage.getItem(
+					"notebooklm_sel_corr_" + cardId,
+				);
+				sessionStorage.removeItem("notebooklm_sel_opt_" + cardId);
+				sessionStorage.removeItem("notebooklm_sel_corr_" + cardId);
+			} catch (e) {
+				console.warn("sessionStorage read failed:", e);
+			}
 
-        dataItems.forEach(item => {
-            const letter = item.dataset.opt;
-            const rawText = item.dataset.text || "";
-            const rawReason = item.dataset.reason || "";
-            
-            if (!rawText.trim() && !rawReason.trim()) return;
+			// Layout Logic
+			const diagramCheck = document.getElementById("diagram-check");
+			const diagramContent = diagramCheck
+				? diagramCheck.innerHTML.trim()
+				: "";
+			const root = document.getElementById("layout-root");
+			const diagramCol = document.getElementById("diagram-container");
 
-            const text = cleanMath(rawText);
-            const reason = cleanMath(rawReason);
-            
-            const flagStr = (item.dataset.flag || "").trim().toLowerCase();
-            const isCorrect = (flagStr === "true" || flagStr === "yes" || flagStr === "1");
+			if (diagramContent.length > 0) {
+				root.classList.add("mode-split");
+			} else {
+				root.classList.add("mode-centered");
+			}
 
-            const block = document.createElement('div');
-            block.className = 'option-block';
-            
-            if (isCorrect) {
-                block.classList.add('state-correct');
-                block.innerHTML = `
-                    <div class="option-content">
-                        <span class="option-letter">${letter}.</span>
-                        <span>${text}</span>
-                    </div>
-                    <div class="feedback-section" style="display:block;">
-                        <div class="thats-right">
-                            ${iconCheck} That's right!
-                        </div>
-                        <div class="rationale-text">${reason}</div>
-                    </div>
-                `;
-            } else {
-                block.classList.add('state-dimmed');
-                block.innerHTML = `
-                    <div class="option-content">
-                        <span class="option-letter">${letter}.</span>
-                        <span>${text}</span>
-                    </div>
-                `;
-            }
-            container.appendChild(block);
-        });
+			// Translate Question
+			const qRaw = document.getElementById("d-question").innerHTML;
+			document.getElementById("back-q-text").innerHTML = cleanMath(qRaw);
 
-        setTimeout(() => triggerMath(document.body), 100);
+			// Options Logic
+			const container = document.getElementById("back-options");
+			const dataItems = document.querySelectorAll(
+				"#back-data > div[data-opt]",
+			);
+			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
 
-    } catch (e) {
-        console.log("Back Template Error:", e);
-    }
-})();
+			const validItems = Array.from(dataItems).filter((item) => {
+				const rawText = item.dataset.text || "";
+				const rawReason = item.dataset.reason || "";
+				return rawText.trim() || rawReason.trim();
+			});
+
+			let shuffleOrder = [];
+			try {
+				const stored = sessionStorage.getItem(
+					"notebooklm_shuffle_" + cardId,
+				);
+				if (stored) {
+					shuffleOrder = JSON.parse(stored);
+				}
+			} catch (e) {}
+
+			let orderedItems = validItems;
+			if (shuffleOrder && shuffleOrder.length === validItems.length) {
+				const temp = [];
+				shuffleOrder.forEach((opt) => {
+					const found = validItems.find(
+						(item) => item.dataset.opt === opt,
+					);
+					if (found) temp.push(found);
+				});
+				if (temp.length === validItems.length) {
+					orderedItems = temp;
+				}
+			}
+
+			orderedItems.forEach((item, index) => {
+				const originalLetter = item.dataset.opt;
+				const displayLetter = String.fromCharCode(65 + index); // A, B, C, D...
+				const rawText = item.dataset.text || "";
+				const rawReason = item.dataset.reason || "";
+
+				const text = cleanMath(rawText);
+				const reason = cleanMath(rawReason);
+
+				const flagStr = (item.dataset.flag || "").trim().toLowerCase();
+				const isCorrect =
+					flagStr === "true" || flagStr === "yes" || flagStr === "1";
+
+				const block = document.createElement("div");
+				block.className = "option-block";
+
+				let feedbackHtml = "";
+				if (reason.trim()) {
+					let headerHtml = "";
+					if (isCorrect) {
+						if (selectedOpt === originalLetter) {
+							headerHtml = `
+								<div class="thats-right">
+									${iconCheck} That's right!
+								</div>
+							`;
+						} else if (selectedCorrect === "true") {
+							headerHtml = `
+								<div class="thats-right">
+									${iconCheck} This is also right!
+								</div>
+							`;
+						} else {
+							headerHtml = `
+								<div class="thats-right">
+									${iconCheck} Right answer
+								</div>
+							`;
+						}
+					} else {
+						if (selectedOpt === originalLetter) {
+							headerHtml = `
+								<div class="not-quite">
+									${iconClose} Not quite
+								</div>
+							`;
+						}
+					}
+					feedbackHtml = `
+						<div class="feedback-section" style="display:block;">
+							${headerHtml}
+							<div class="rationale-text">${reason}</div>
+						</div>
+					`;
+				}
+
+				block.innerHTML = `
+					<div class="option-content">
+						<span class="option-letter">${displayLetter}.</span>
+						<span>${text}</span>
+					</div>
+					${feedbackHtml}
+				`;
+
+				// Set visual states: Highlight correct & user chosen (wrong), dim the rest
+				if (isCorrect) {
+					block.classList.add("state-correct");
+				} else if (selectedOpt === originalLetter) {
+					block.classList.add("state-wrong");
+				} else {
+					block.classList.add("state-dimmed");
+				}
+
+				container.appendChild(block);
+			});
+
+			// Render Continue Action Button if option was selected
+			if (selectedCorrect !== null) {
+				const actionContainer =
+					document.getElementById("action-container");
+				if (actionContainer) {
+					const continueBtn = document.createElement("button");
+					continueBtn.className = `continue-btn ${selectedCorrect === "true" ? "btn-correct" : "btn-wrong"}`;
+					continueBtn.textContent =
+						selectedCorrect === "true"
+							? "Continue (Mark Correct)"
+							: "Continue (Mark Incorrect)";
+					/**
+					 * Event listener that grades the card based on the previous selection.
+					 */
+					continueBtn.addEventListener("click", (e) => {
+						// Do NOT stop propagation here. Allow AnkiMobile to natively grade the card if tapped.
+						if (typeof pycmd !== "undefined") {
+							pycmd(
+								selectedCorrect === "true" ? "ease3" : "ease1",
+							);
+						} else if (typeof buttonClick !== "undefined") {
+							buttonClick(selectedCorrect === "true" ? 3 : 1);
+						}
+					});
+					actionContainer.appendChild(continueBtn);
+				}
+			}
+
+			setTimeout(() => triggerMath(document.body), 100);
+		} catch (e) {
+			console.log("Back Template Error:", e);
+		}
+	})();
 </script>

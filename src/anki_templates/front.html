@@ -1,148 +1,248 @@
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link
+	href="https://fonts.googleapis.com/icon?family=Material+Icons"
+	rel="stylesheet"
+/>
 
 <div class="main-wrapper mode-centered">
-    <div class="quiz-column">
-        <div class="quiz-content-wrapper">
-            
-            <div class="question-text" id="q-text"></div>
+	<div class="quiz-column">
+		<div class="quiz-content-wrapper">
+			<div class="question-text" id="q-text"></div>
 
-            <div class="hint-container">
-                <div class="hint-btn" id="hint-toggle">
-                    <span class="material-icons" style="font-size: 18px;">lightbulb</span> Hint
-                </div>
-                <div class="hint-text-box" id="hint-content"></div>
-            </div>
+			<div class="options-list" id="front-options">
+				<div style="color: #666; padding: 20px">Loading...</div>
+			</div>
 
-            <div class="options-list" id="front-options">
-                <div style="color: #666; padding: 20px;">Loading...</div>
-            </div>
-
-        </div>
-    </div>
+			<div class="hint-container">
+				<div
+					class="hint-btn"
+					id="hint-toggle"
+					onclick="event.stopPropagation()"
+				>
+					<span class="material-icons" style="font-size: 18px"
+						>lightbulb</span
+					>
+					Hint
+				</div>
+				<div class="hint-text-box" id="hint-content"></div>
+			</div>
+		</div>
+	</div>
 </div>
 
-<div id="raw-data" style="display:none;">
-    <div id="d-question">{{Question}}</div>
-    <div id="d-hint">{{Hint}}</div>
-    <div data-opt="A" data-text="{{Option1}}" data-flag="{{Flag1}}" data-reason="{{Rationale1}}"></div>
-    <div data-opt="B" data-text="{{Option2}}" data-flag="{{Flag2}}" data-reason="{{Rationale2}}"></div>
-    <div data-opt="C" data-text="{{Option3}}" data-flag="{{Flag3}}" data-reason="{{Rationale3}}"></div>
-    <div data-opt="D" data-text="{{Option4}}" data-flag="{{Flag4}}" data-reason="{{Rationale4}}"></div>
+<div id="raw-data" style="display: none">
+	<div id="d-question">{{Question}}</div>
+	<div id="d-hint">{{Hint}}</div>
+
+	<div
+		data-opt="A"
+		data-text="{{Option1}}"
+		data-flag="{{Flag1}}"
+		data-reason="{{Rationale1}}"
+	></div>
+	<div
+		data-opt="B"
+		data-text="{{Option2}}"
+		data-flag="{{Flag2}}"
+		data-reason="{{Rationale2}}"
+	></div>
+	<div
+		data-opt="C"
+		data-text="{{Option3}}"
+		data-flag="{{Flag3}}"
+		data-reason="{{Rationale3}}"
+	></div>
+	<div
+		data-opt="D"
+		data-text="{{Option4}}"
+		data-flag="{{Flag4}}"
+		data-reason="{{Rationale4}}"
+	></div>
 </div>
 
 <script>
-(function() {
-    // --- 1. THE TRANSLATOR (Fixes $$ -> \[) ---
-    function cleanMath(str) {
-        if (!str) return "";
-        // Convert Block Math: $$ ... $$ -> \[ ... \]
-        let s = str.replace(/\$\$(.*?)\$\$/gs, '\\[$1\\]');
-        // Convert Inline Math: $ ... $ -> \( ... \)
-        s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, '\\($1\\)');
-        // Convert Code: `...` -> <code>...</code>
-        s = s.replace(/`([^`]+)`/g, '<code class="latex-snippet">$1</code>');
-        return s;
-    }
+	(function () {
+		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
+		// EXCEPT when clicking on an option block or hint toggle.
+		const interceptTap = (e) => {
+			const isOption = e.target && e.target.closest(".option-block");
+			const isHint = e.target && e.target.closest("#hint-toggle");
+			if (!isOption && !isHint) {
+				e.stopPropagation();
+				if (e.cancelable) e.preventDefault();
+			}
+		};
+		window.addEventListener("click", interceptTap, true);
+		window.addEventListener("touchend", interceptTap, true);
 
-    // --- 2. MATH RENDERER ---
-    function triggerMath(element) {
-        if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
-            MathJax.typesetPromise([element]).catch(err => {});
-        } else if (typeof MathJax !== 'undefined' && MathJax.Hub) {
-            MathJax.Hub.Queue(["Typeset", MathJax.Hub, element]);
-        }
-    }
+		// --- 1. THE TRANSLATOR (Fixes $$ -> \[) ---
+		function cleanMath(str) {
+			if (!str) return "";
+			// Convert Block Math: $$ ... $$ -> \[ ... \]
+			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
+			// Convert Inline Math: $ ... $ -> \( ... \)
+			s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, "\\($1\\)");
+			// Convert Code: `...` -> <code>...</code>
+			s = s.replace(
+				/`([^`]+)`/g,
+				'<code class="latex-snippet">$1</code>',
+			);
+			return s;
+		}
 
-    try {
-        // --- 3. PROCESS QUESTION & HINT ---
-        const qRaw = document.getElementById('d-question').innerHTML;
-        const hRaw = document.getElementById('d-hint').innerHTML;
-        
-        document.getElementById('q-text').innerHTML = cleanMath(qRaw);
-        
-        const hBox = document.getElementById('hint-content');
-        if (hRaw.trim()) {
-            hBox.innerHTML = cleanMath(hRaw);
-        } else {
-            const hBtn = document.getElementById('hint-toggle');
-            if(hBtn) hBtn.style.display = 'none';
-        }
+		// --- 2. MATH RENDERER ---
+		function triggerMath(element) {
+			if (typeof MathJax !== "undefined" && MathJax.typesetPromise) {
+				MathJax.typesetPromise([element]).catch((err) => {});
+			} else if (typeof MathJax !== "undefined" && MathJax.Hub) {
+				MathJax.Hub.Queue(["Typeset", MathJax.Hub, element]);
+			}
+		}
 
-        // --- 4. PROCESS OPTIONS ---
-        const container = document.getElementById('front-options');
-        const dataItems = document.querySelectorAll('#raw-data > div[data-opt]');
-        
-        container.innerHTML = ''; // Clear loading
+		try {
+			// --- 3. PROCESS QUESTION & HINT ---
+			const qRaw = document.getElementById("d-question").innerHTML;
+			const hRaw = document.getElementById("d-hint").innerHTML;
 
-        const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
-        const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+			document.getElementById("q-text").innerHTML = cleanMath(qRaw);
 
-        dataItems.forEach(item => {
-            const letter = item.dataset.opt;
-            const rawText = item.dataset.text || "";
-            const rawReason = item.dataset.reason || "";
-            
-            if (!rawText.trim() && !rawReason.trim()) return;
+			const hBox = document.getElementById("hint-content");
+			if (hRaw.trim()) {
+				hBox.innerHTML = cleanMath(hRaw);
+			} else {
+				const hBtn = document.getElementById("hint-toggle");
+				if (hBtn) hBtn.style.display = "none";
+			}
 
-            // Apply Translator
-            const text = cleanMath(rawText);
-            const reason = cleanMath(rawReason);
-            
-            const flagStr = (item.dataset.flag || "").trim().toLowerCase();
-            const isCorrect = (flagStr === "true" || flagStr === "yes" || flagStr === "1");
+			// --- 4. PROCESS OPTIONS ---
+			const container = document.getElementById("front-options");
+			const dataItems = document.querySelectorAll(
+				"#raw-data > div[data-opt]",
+			);
+			const qRawForId = document.getElementById("d-question").innerHTML;
+			const cardId = qRawForId
+				.substring(0, 50)
+				.replace(/[^a-zA-Z0-9]/g, "");
 
-            const btn = document.createElement('div');
-            btn.className = 'option-block';
-            
-            btn.innerHTML = `
-                <div class="option-content">
-                    <span class="option-letter">${letter}.</span>
-                    <span>${text}</span>
-                </div>
-                <div class="feedback-section">
-                    <div class="${isCorrect ? 'thats-right' : 'not-quite'}">
-                        ${isCorrect ? iconCheck : iconClose}
-                        <span>${isCorrect ? "That's right!" : "Not quite"}</span>
-                    </div>
-                    <div class="rationale-text">${reason}</div>
-                </div>
-            `;
-            
-            btn.addEventListener('click', function() {
-                document.querySelectorAll('.option-block').forEach(b => {
-                    b.classList.remove('state-correct', 'state-wrong');
-                    b.querySelector('.feedback-section').style.display = 'none';
-                });
+			container.innerHTML = ""; // Clear loading
 
-                if (isCorrect) btn.classList.add('state-correct');
-                else btn.classList.add('state-wrong');
-                
-                const feed = btn.querySelector('.feedback-section');
-                if(reason.trim()) {
-                    feed.style.display = 'block';
-                    triggerMath(feed);
-                }
-            });
+			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
 
-            container.appendChild(btn);
-        });
+			const validItems = Array.from(dataItems).filter((item) => {
+				const rawText = item.dataset.text || "";
+				const rawReason = item.dataset.reason || "";
+				return rawText.trim() || rawReason.trim();
+			});
 
-        // HINT CLICK
-        const hintBtn = document.getElementById('hint-toggle');
-        if(hintBtn && hintBtn.style.display !== 'none') {
-            hintBtn.addEventListener('click', () => {
-                const isVis = hBox.style.display === "block";
-                hBox.style.display = isVis ? "none" : "block";
-                hintBtn.style.color = isVis ? "#ffffff" : "#a8c7fa";
-                if(!isVis) triggerMath(hBox);
-            });
-        }
+			// Shuffle options randomly
+			for (let i = validItems.length - 1; i > 0; i--) {
+				const j = Math.floor(Math.random() * (i + 1));
+				[validItems[i], validItems[j]] = [validItems[j], validItems[i]];
+			}
 
-        // FORCE RENDER
-        setTimeout(() => triggerMath(document.body), 100);
+			try {
+				sessionStorage.setItem(
+					"notebooklm_shuffle_" + cardId,
+					JSON.stringify(validItems.map((i) => i.dataset.opt)),
+				);
+			} catch (e) {
+				console.warn("sessionStorage not available for shuffle:", e);
+			}
 
-    } catch (e) {
-        console.log("Template Error:", e);
-    }
-})();
+			validItems.forEach((item, index) => {
+				const originalLetter = item.dataset.opt;
+				const displayLetter = String.fromCharCode(65 + index); // A, B, C, D...
+				const rawText = item.dataset.text || "";
+				const rawReason = item.dataset.reason || "";
+
+				// Apply Translator
+				const text = cleanMath(rawText);
+				const reason = cleanMath(rawReason);
+
+				const flagStr = (item.dataset.flag || "").trim().toLowerCase();
+				const isCorrect =
+					flagStr === "true" || flagStr === "yes" || flagStr === "1";
+
+				const btn = document.createElement("div");
+				btn.className = "option-block";
+
+				btn.innerHTML = `
+					<div class="option-content">
+						<span class="option-letter">${displayLetter}.</span>
+						<span>${text}</span>
+					</div>
+					<div class="feedback-section">
+						<div class="${isCorrect ? "thats-right" : "not-quite"}">
+							${isCorrect ? iconCheck : iconClose}
+							<span>${isCorrect ? "That's right!" : "Not quite"}</span>
+						</div>
+						<div class="rationale-text">${reason}</div>
+					</div>
+				`;
+
+				const saveState = () => {
+					try {
+						sessionStorage.setItem(
+							"notebooklm_sel_opt_" + cardId,
+							originalLetter,
+						);
+						sessionStorage.setItem(
+							"notebooklm_sel_corr_" + cardId,
+							isCorrect ? "true" : "false",
+						);
+					} catch (e) {
+						console.warn("sessionStorage not available:", e);
+					}
+				};
+
+				// Save on touchstart/mousedown to ensure state is saved before AnkiMobile natively flips
+				btn.addEventListener("touchstart", saveState, {
+					passive: true,
+				});
+				btn.addEventListener("mousedown", saveState, { passive: true });
+
+				btn.addEventListener("click", (e) => {
+					saveState();
+
+					// Flip to back (Desktop / AnkiDroid fallback)
+					if (typeof pycmd !== "undefined") {
+						pycmd("ans");
+					} else if (typeof showAnswer !== "undefined") {
+						showAnswer();
+					} else {
+						// Fallback: simulate Enter keypress
+						const ev = document.createEvent("Event");
+						ev.initEvent("keypress", true, true);
+						ev.which = ev.keyCode = 13;
+						document.dispatchEvent(ev);
+					}
+				});
+
+				container.appendChild(btn);
+			});
+
+			// HINT CLICK
+			const hintBtn = document.getElementById("hint-toggle");
+			if (hintBtn) {
+				hintBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					const isHidden =
+						window.getComputedStyle(hBox).display === "none";
+					if (isHidden) {
+						hBox.style.display = "block";
+						hintBtn.classList.add("hint-active");
+						triggerMath(hBox);
+					} else {
+						hBox.style.display = "none";
+						hintBtn.classList.remove("hint-active");
+					}
+				});
+			}
+
+			// FORCE RENDER
+			setTimeout(() => triggerMath(document.body), 100);
+		} catch (e) {
+			console.log("Template Error:", e);
+		}
+	})();
 </script>
