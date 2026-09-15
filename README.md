@@ -79,3 +79,9 @@ Instead of creating fields manually, simply install this helper add-on. It autom
 **Shift key not working?**
 
 - Check your Windows Sticky Keys settings or your mechanical keyboard's "Game Mode".
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](./LICENSE). See the [LICENSE](./LICENSE) file for details.

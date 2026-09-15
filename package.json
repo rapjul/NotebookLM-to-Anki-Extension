@@ -3,6 +3,7 @@
   "version": "3.0.1",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "description": "Exports NotebookLM Quizzes to Anki",
   "scripts": {
     "build": "web-ext build --config .web-ext-config.cjs",
