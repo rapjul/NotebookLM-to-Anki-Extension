@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="nbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D9488" />
+      <stop offset="100%" stop-color="#115E59" />
+    </linearGradient>
+    <linearGradient id="fcGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#1E3A8A" />
+    </linearGradient>
+    <linearGradient id="arrowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+  </defs>
+  <!-- Notebook (NotebookLM side) -->
+  <g>
+    <!-- Pages -->
+    <rect x="60" y="120" width="180" height="260" rx="16" fill="url(#nbGrad)" />
+    <!-- Spine -->
+    <rect x="80" y="120" width="20" height="260" fill="#0F766E" />
+    <!-- Lines -->
+    <g fill="none" stroke="#CCFBF1" stroke-width="8" stroke-linecap="round">
+      <line x1="120" y1="180" x2="200" y2="180" />
+      <line x1="120" y1="220" x2="200" y2="220" />
+      <line x1="120" y1="260" x2="170" y2="260" />
+    </g>
+  </g>
+
+  <!-- Arrow at the top -->
+  <g>
+    <path d="M 150 110 Q 236 14 324 141" fill="none" stroke="url(#arrowGrad)" stroke-width="12"
+      stroke-linecap="round" />
+    <path d="M 342 173 L 302 144 L 338 124 Z" fill="url(#arrowGrad)" stroke="url(#arrowGrad)"
+      stroke-width="2" stroke-linejoin="round" />
+  </g>
+
+  <!-- Flashcard (Anki side) -->
+  <g>
+    <!-- Flashcard -->
+    <rect x="270" y="180" width="180" height="200" rx="16" fill="url(#fcGrad)" />
+
+    <!-- Star in the center of the flashcard (centered at cx=360, cy=280) -->
+    <path
+      d="M 360 250 L 368 269 L 388 270 L 372 284 L 377 304 L 360 293 L 343 304 L 348 284 L 332 270 L 352 269 Z"
+      fill="#93C5FD" stroke="#FFFFFF" stroke-width="6" stroke-linejoin="round" />
+  </g>
+</svg>
