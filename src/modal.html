@@ -1,0 +1,72 @@
+<div id="anki-duplicate-modal-overlay" class="anki-modal-overlay">
+	<div class="anki-modal">
+		<h3>Deck Already Exists</h3>
+		<p>
+			The deck you are trying to export already exists in Anki. Please
+			choose how you want to resolve this:
+		</p>
+		<div class="anki-modal-buttons">
+			<button id="anki-btn-merge" type="button">
+				Merge (Skip Duplicates)<br />
+				<span
+					>Only add new cards. Existing identical cards are
+					skipped.</span
+				>
+			</button>
+			<button id="anki-btn-increment" type="button">
+				Auto-Increment<br />
+				<span
+					>Create a new deck:
+					<strong id="anki-modal-deck-title-inc"></strong
+				></span>
+			</button>
+			<button id="anki-btn-overwrite" class="danger" type="button">
+				Overwrite Deck<br />
+				<span
+					>Completely delete
+					<strong id="anki-modal-deck-title"></strong> and recreate
+					it.</span
+				>
+			</button>
+			<button id="anki-btn-cancel" class="text-btn" type="button">
+				Cancel
+			</button>
+		</div>
+	</div>
+</div>
+
+<div id="anki-error-modal-overlay" class="anki-modal-overlay">
+	<div class="anki-modal">
+		<h3
+			style="color: #ffb4ab; display: flex; align-items: center; gap: 8px"
+		>
+			<svg
+				width="20"
+				height="20"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+			>
+				<path
+					d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+				/>
+				<line x1="12" y1="9" x2="12" y2="13" />
+				<line x1="12" y1="17" x2="12.01" y2="17" />
+			</svg>
+			Export Failed
+		</h3>
+		<p>An error was returned by <strong>Anki / AnkiConnect</strong>:</p>
+		<div id="anki-error-modal-content" class="anki-error-content"></div>
+		<div class="anki-modal-buttons">
+			<button
+				id="anki-error-btn-close"
+				class="text-btn"
+				type="button"
+				style="text-align: center; margin-top: 10px"
+			>
+				Close
+			</button>
+		</div>
+	</div>
+</div>

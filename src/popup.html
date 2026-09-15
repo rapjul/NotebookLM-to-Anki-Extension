@@ -1,20 +1,126 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    body { font-family: sans-serif; padding: 12px; width: 220px; }
-    button {
-      width: 100%; padding: 10px; border-radius: 6px; border: none;
-      cursor: pointer; font-weight: bold; background: #FF9900; color: white; /* AWS Orange */
-    }
-    button:hover { background: #e88b00; }
-    #status { margin-top: 8px; font-size: 11px; color: #555; }
-  </style>
-</head>
-<body>
-  <button id="sendToAnki">⚡ Capture AWS Quiz</button>
-  <div id="status"></div>
-  <script src="popup.js"></script>
-</body>
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>NotebookLM to Anki</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<style>
+			body {
+				font-family: sans-serif;
+				padding: 12px;
+				width: 220px;
+			}
+
+			button {
+				width: 100%;
+				padding: 10px;
+				border-radius: 6px;
+				border: none;
+				cursor: pointer;
+				font-weight: bold;
+				background: #ff9900;
+				color: white;
+				/* AWS Orange */
+			}
+
+			button:hover {
+				background: #e88b00;
+			}
+
+			#status {
+				margin-top: 8px;
+				font-size: 11px;
+				color: #555;
+			}
+
+			hr {
+				border: 0;
+				border-top: 1px solid #ccc;
+				margin: 12px 0;
+			}
+
+			.debug-container {
+				margin-bottom: 8px;
+				font-size: 12px;
+			}
+
+			#debug-status {
+				font-weight: bold;
+			}
+
+			.status-enabled {
+				color: green;
+			}
+
+			.status-disabled {
+				color: red;
+			}
+
+			.btn-dark {
+				background: #555;
+				color: white;
+			}
+
+			.config-section {
+				margin-bottom: 12px;
+			}
+
+			.config-label {
+				font-size: 12px;
+				font-weight: bold;
+				margin-bottom: 4px;
+				display: block;
+				color: #333;
+			}
+
+			.config-input {
+				width: 100%;
+				box-sizing: border-box;
+				padding: 6px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-size: 12px;
+				font-family: monospace;
+			}
+
+			.config-help {
+				font-size: 10px;
+				color: #666;
+				margin-top: 4px;
+				line-height: 1.3;
+			}
+
+			.config-help code {
+				background: #eee;
+				padding: 1px 3px;
+				border-radius: 3px;
+			}
+		</style>
+	</head>
+
+	<body>
+		<button id="sendToAnki" type="button">⚡ Capture Quiz</button>
+		<div id="status"></div>
+		<hr />
+		<div class="config-section">
+			<label class="config-label" for="quizDeckNameTemplate"
+				>Quiz Deck Name Template</label
+			>
+			<input type="text" id="quizDeckNameTemplate" class="config-input" />
+			<div class="config-help">
+				Variables:<br />
+				<code>{notebookName}</code> - Source notebook<br />
+				<code>{quizName}</code> - Artifact title
+			</div>
+		</div>
+		<hr />
+		<div class="debug-container">
+			Debug Logs:
+			<span id="debug-status" class="status-enabled">Enabled</span>
+		</div>
+		<button id="toggleDebug" type="button" class="btn-dark">
+			Disable Debug Logging
+		</button>
+		<script src="popup.js"></script>
+	</body>
 </html>

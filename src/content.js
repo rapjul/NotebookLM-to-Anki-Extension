@@ -1,157 +1,860 @@
-// content.js - v8.1 (Clean Data Pass-through)
+// content.js - v8.2 (Clean Data Pass-through & Modal UI)
 
-(function() {
-  const CONFIG = {
-    BUTTON_ID: "notebooklm-to-anki-btn", 
-    ANCHOR_SELECTORS: [
-      'button[aria-label="Good content rating"]',
-      'button[aria-label="Copy"]',
-      'button[aria-label="Download"]'
-    ]
-  };
+(() => {
+	/**
+	 * Toggle for debug logging state, updated asynchronously from local storage.
+	 * @type {boolean}
+	 */
+	let enableDebug = true;
+	let quizDeckNameTemplate =
+		"NotebookLM::{notebookName}::Quizzes::{quizName}";
 
-  function initDataMiner() {
-    const appRoot = document.querySelector('[data-app-data]');
-    if (appRoot) {
-      console.log("[Anki Bridge] ⛏️ Miner Ready");
-      window.top.postMessage({ action: "ANKI_MINER_READY" }, "*");
-      window.addEventListener("message", (event) => {
-        if (event.data.action === "ANKI_TRIGGER_EXTRACT") {
-          const jsonString = appRoot.getAttribute('data-app-data');
-          const customTitle = event.data.notebookTitle; 
-          processBatch(jsonString, customTitle);
-        }
-      });
-    }
-  }
+	// Load configuration setting from storage.
+	chrome.storage.local.get(
+		{
+			enableDebugLogging: true,
+			quizDeckNameTemplate:
+				"NotebookLM::{notebookName}::Quizzes::{quizName}",
+		},
+		(res) => {
+			enableDebug = res.enableDebugLogging;
+			quizDeckNameTemplate = res.quizDeckNameTemplate;
+		},
+	);
 
-  function unescapeHtml(str) {
-    if (!str) return "";
-    return str.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'");
-  }
+	// Listen for settings changes to update status dynamically.
+	chrome.storage.onChanged.addListener((changes, areaName) => {
+		if (areaName === "local") {
+			if (changes.enableDebugLogging) {
+				enableDebug = changes.enableDebugLogging.newValue;
+			}
+			if (changes.quizDeckNameTemplate) {
+				quizDeckNameTemplate = changes.quizDeckNameTemplate.newValue;
+			}
+		}
+	});
 
-  function processBatch(jsonString, customNotebookTitle) {
-    try {
-      const cleanJson = unescapeHtml(jsonString);
-      const data = JSON.parse(cleanJson);
-      
-      const quizData = data.quiz || (data.mostRecentQuery && data.mostRecentQuery.quiz);
-      
-      if (!quizData || !Array.isArray(quizData) || quizData.length === 0) {
-        window.top.postMessage({ action: "ANKI_REAL_FAIL", error: "0 Questions Found." }, "*");
-        return;
-      }
+	/**
+	 * Local shadow console to conditionally forward logs to window.console.
+	 */
+	const console = {
+		log: (...args) => {
+			if (enableDebug) window.console.log(...args);
+		},
+		warn: (...args) => {
+			if (enableDebug) window.console.warn(...args);
+		},
+		error: (...args) => {
+			if (enableDebug) window.console.error(...args);
+		},
+	};
 
-      let finalTitle = customNotebookTitle;
-      if (!finalTitle || finalTitle === "NotebookLM") { finalTitle = data.title; }
-      if (!finalTitle) finalTitle = "Unknown Notebook"; 
-      finalTitle = finalTitle.replace(/::/g, " - ").trim();
+	const CONFIG = {
+		BUTTON_ID: "notebooklm-to-anki-btn",
+		ANCHOR_SELECTORS: [
+			'button[aria-label="Good content rating"]',
+			'button[aria-label="Copy"]',
+			'button[aria-label="Download"]',
+		],
+	};
 
-      const cards = quizData.map(q => {
-        return {
-          question: q.question,
-          hint: q.hint || "",
-          
-          // Capture raw values
-          option1: q.answerOptions[0]?.text || "",
-          flag1: q.answerOptions[0]?.isCorrect ? "True" : "False",
-          rationale1: q.answerOptions[0]?.rationale || "", 
+	/**
+	 * Initializes the data miner that listens for the app root element
+	 * with data-app-data and processes message triggers from the top window.
+	 *
+	 * If the container element is not immediately present, registers a MutationObserver
+	 * to listen for its dynamic insertion.
+	 * @returns {void}
+	 */
+	function initDataMiner() {
+		console.log("[Anki Bridge] 🔍 initDataMiner started.");
 
-          option2: q.answerOptions[1]?.text || "",
-          flag2: q.answerOptions[1]?.isCorrect ? "True" : "False",
-          rationale2: q.answerOptions[1]?.rationale || "",
+		/**
+		 * Helper to check for the [data-app-data] element and initialize setup if present.
+		 * @returns {boolean} True if the element was found and initialized.
+		 */
+		const checkForAppRoot = () => {
+			const appRoot = document.querySelector("[data-app-data]");
+			if (appRoot) {
+				console.log(
+					"[Anki Bridge] ⛏️ Miner Ready: Found [data-app-data] container.",
+				);
+				window.top.postMessage({ action: "ANKI_MINER_READY" }, "*");
+				window.addEventListener("message", (event) => {
+					if (event.data.action === "ANKI_TRIGGER_EXTRACT") {
+						console.log(
+							"[Anki Bridge] 📥 Data Miner received ANKI_TRIGGER_EXTRACT trigger message:",
+							event.data,
+						);
+						const jsonString =
+							appRoot.getAttribute("data-app-data");
+						const customTitle = event.data.notebookTitle;
+						console.log(
+							"[Anki Bridge] 📑 Raw JSON string retrieved length:",
+							jsonString ? jsonString.length : 0,
+						);
+						processBatch(jsonString, customTitle);
+					}
+				});
+				return true;
+			}
+			return false;
+		};
 
-          option3: q.answerOptions[2]?.text || "",
-          flag3: q.answerOptions[2]?.isCorrect ? "True" : "False",
-          rationale3: q.answerOptions[2]?.rationale || "",
+		if (!checkForAppRoot()) {
+			console.log(
+				"[Anki Bridge] ⏳ [data-app-data] not found immediately. Observing DOM for changes...",
+			);
+			const observer = new MutationObserver((_mutations, obs) => {
+				if (checkForAppRoot()) {
+					console.log(
+						"[Anki Bridge] ✅ [data-app-data] detected via MutationObserver. Disconnecting observer.",
+					);
+					obs.disconnect();
+				}
+			});
+			observer.observe(document.documentElement || document.body, {
+				childList: true,
+				subtree: true,
+			});
+		}
+	}
 
-          option4: q.answerOptions[3]?.text || "",
-          flag4: q.answerOptions[3]?.isCorrect ? "True" : "False",
-          rationale4: q.answerOptions[3]?.rationale || "",
-        };
-      });
+	/**
+	 * Unescapes HTML entities in a string (e.g., &quot;, &amp;, &lt;, &gt;, &#39;).
+	 * @param {string} str - The string to unescape.
+	 * @returns {string} The unescaped string.
+	 */
+	function unescapeHtml(str) {
+		if (!str) return "";
+		return str
+			.replace(/&quot;/g, '"')
+			.replace(/&amp;/g, "&")
+			.replace(/&lt;/g, "<")
+			.replace(/&gt;/g, ">")
+			.replace(/&#39;/g, "'");
+	}
 
-      chrome.runtime.sendMessage({ 
-        action: "sendBatchToAnki", 
-        batchData: cards, 
-        deckTitle: finalTitle 
-      }, (res) => {
-        if (res && res.success) {
-          window.top.postMessage({ action: "ANKI_REAL_SUCCESS", count: cards.length, deck: finalTitle }, "*");
-        } else {
-          window.top.postMessage({ action: "ANKI_REAL_FAIL", error: res ? res.error : "Unknown Error" }, "*");
-        }
-      });
+	/**
+	 * Parses and processes the raw JSON string extracted from the page,
+	 * formats the deck title, maps quiz questions to flashcard structures,
+	 * and posts the extracted data to the top window.
+	 * @param {string} jsonString - The raw, potentially HTML-escaped JSON data.
+	 * @param {string} customNotebookTitle - The notebook title to use for naming the deck.
+	 * @returns {void}
+	 */
+	function processBatch(jsonString, customNotebookTitle) {
+		console.log(
+			"[Anki Bridge] 🔨 processBatch started. Custom notebook title:",
+			customNotebookTitle,
+		);
+		try {
+			if (!jsonString) {
+				console.error(
+					"[Anki Bridge] ❌ processBatch: Raw JSON string is empty or null.",
+				);
+				window.top.postMessage(
+					{
+						action: "ANKI_REAL_FAIL",
+						error: "Raw JSON string is empty.",
+					},
+					"*",
+				);
+				return;
+			}
+			console.log(
+				"[Anki Bridge] 🧹 Unescaping raw HTML entities from JSON...",
+			);
+			const cleanJson = unescapeHtml(jsonString);
+			console.log("[Anki Bridge] 🔀 Parsing clean JSON...");
+			const data = JSON.parse(cleanJson);
+			console.log(
+				"[Anki Bridge] 📦 Parsed JSON data keys:",
+				Object.keys(data),
+			);
 
-    } catch (e) {
-      console.error(e);
-      window.top.postMessage({ action: "ANKI_REAL_FAIL", error: "JSON Parse Error: " + e.message }, "*");
-    }
-  }
+			const quizData = data.quiz || data.mostRecentQuery?.quiz;
+			console.log(
+				"[Anki Bridge] 🔍 Found quiz data:",
+				quizData ? `Array length ${quizData.length}` : "Not Found",
+			);
 
-  // UI INJECTOR (Standard)
-  let isMinerConnected = false;
-  function initUiInjector() {
-    window.addEventListener("message", (event) => {
-      if (event.data.action === "ANKI_MINER_READY") { isMinerConnected = true; updateButtonState("ready"); }
-      else if (event.data.action === "ANKI_REAL_SUCCESS") { updateButtonState("success", event.data.count, event.data.deck); }
-      else if (event.data.action === "ANKI_REAL_FAIL") { alert("⚠️ Export Failed: " + event.data.error); updateButtonState("error"); }
-    });
-    const observer = new MutationObserver(() => {
-      if (document.getElementById(CONFIG.BUTTON_ID)) return;
-      let anchorBtn = null;
-      for (const selector of CONFIG.ANCHOR_SELECTORS) {
-        const found = document.querySelector(selector);
-        if (found) { anchorBtn = found; break; }
-      }
-      if (anchorBtn) {
-        const container = anchorBtn.closest('div.flex') || anchorBtn.parentElement;
-        if (container) { container.insertBefore(createAngularCloneButton(), container.firstChild); }
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+			if (
+				!quizData ||
+				!Array.isArray(quizData) ||
+				quizData.length === 0
+			) {
+				console.error(
+					"[Anki Bridge] ❌ No valid quiz array found in parsed data.",
+				);
+				window.top.postMessage(
+					{ action: "ANKI_REAL_FAIL", error: "0 Questions Found." },
+					"*",
+				);
+				return;
+			}
 
-  function getNotebookTitle() {
-    const input = document.querySelector('input[placeholder="Notebook title"]');
-    if (input && input.value) return input.value.trim();
-    const label = document.querySelector('.title-label');
-    if (label && label.textContent) return label.textContent.trim();
-    if (document.title && document.title.includes("- NotebookLM")) { return document.title.replace("- NotebookLM", "").trim(); }
-    return null;
-  }
+			let nbTitle = customNotebookTitle;
+			if (!nbTitle || nbTitle === "NotebookLM") {
+				nbTitle = "Unknown Notebook";
+			}
+			nbTitle = nbTitle.replace(/::/g, " - ").trim();
 
-  function createAngularCloneButton() {
-    const btn = document.createElement("button");
-    btn.id = CONFIG.BUTTON_ID;
-    btn.className = "mdc-button mat-mdc-button mat-mdc-outlined-button mat-unthemed mat-mdc-button-base";
-    btn.style.cssText = `border: 1px solid rgb(55, 56, 59); border-radius: 18px; padding: 0 20px; margin-right: 10px; color: #e3e3e3; height: 40px; display: inline-flex; align-items: center; justify-content: center; cursor: not-allowed; opacity: 0.5;`;
-    const downloadIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="18" viewBox="0 -960 960 960" width="18" fill="currentColor"><path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/></svg>`;
-    btn.innerHTML = `<span class="mat-mdc-button-persistent-ripple mdc-button__ripple"></span><span class="mat-mdc-button-touch-target"></span><span class="mdc-button__label" style="display: flex; align-items: center; gap: 8px;">${downloadIconSvg}<span>Anki Export</span></span>`;
-    btn.disabled = true;
-    btn.onclick = (e) => {
-      e.preventDefault(); e.stopPropagation();
-      if (!isMinerConnected) { alert("Wait for page to fully load..."); return; }
-      const labelText = btn.querySelector(".mdc-button__label span:last-child");
-      if(labelText) labelText.innerText = "Extracting...";
-      btn.style.borderColor = "#a8c7fa"; btn.style.color = "#a8c7fa";
-      const deckName = getNotebookTitle();
-      if (!deckName) { const manualName = prompt("Enter Notebook Name:"); if (!manualName) { updateButtonState("ready"); return; } }
-      const iframes = document.querySelectorAll('iframe');
-      iframes.forEach(iframe => { iframe.contentWindow.postMessage({ action: "ANKI_TRIGGER_EXTRACT", notebookTitle: deckName || manualName }, "*"); });
-    };
-    return btn;
-  }
+			console.log(
+				"[Anki Bridge] 🏷️ getQuizTitle() raw call:",
+				getQuizTitle(),
+			);
+			console.log("[Anki Bridge] 🏷️ data.title:", data.title);
+			let quizTitle = getQuizTitle() || data.title || "Quiz";
+			console.log("[Anki Bridge] 🏷️ Evaluated quizTitle:", quizTitle);
+			quizTitle = quizTitle.replace(/::/g, " - ").trim();
 
-  function updateButtonState(state, count = 0, deckName = "") {
-    const btn = document.getElementById(CONFIG.BUTTON_ID);
-    if (!btn) return;
-    const labelText = btn.querySelector(".mdc-button__label span:last-child");
-    if (state === "ready") { if(labelText) labelText.innerText = "Anki Export"; btn.style.opacity = "1"; btn.style.cursor = "pointer"; btn.style.borderColor = "rgb(55, 56, 59)"; btn.style.color = "#e3e3e3"; btn.disabled = false; } 
-    else if (state === "success") { if(labelText) labelText.innerText = `Saved ${count}!`; btn.style.borderColor = "#6dd58c"; btn.style.color = "#6dd58c"; setTimeout(() => updateButtonState("ready"), 3000); }
-    else if (state === "error") { if(labelText) labelText.innerText = "Error"; btn.style.borderColor = "#ffb4ab"; btn.style.color = "#ffb4ab"; setTimeout(() => updateButtonState("ready"), 3000); }
-  }
+			// Remove "Quiz | ", "Quiz - ", "Quiz: " prefix if it exists
+			quizTitle = quizTitle.replace(/^Quiz\s*[|\-:]\s*/i, "");
 
-  initDataMiner();
-  initUiInjector();
+			// Remove " Quiz" suffix if it exists
+			quizTitle = quizTitle.replace(/\s*Quiz$/i, "");
+
+			const finalTitle = quizDeckNameTemplate
+				.replace("{notebookName}", nbTitle)
+				.replace("{quizName}", quizTitle);
+			console.log(
+				"[Anki Bridge] 🏷️ Formatted deck final title:",
+				finalTitle,
+			);
+
+			const cards = quizData.map((q) => {
+				return {
+					question: q.question,
+					hint: q.hint || "",
+
+					// Capture raw values
+					option1: q.answerOptions[0]?.text || "",
+					flag1: q.answerOptions[0]?.isCorrect ? "True" : "False",
+					rationale1: q.answerOptions[0]?.rationale || "",
+
+					option2: q.answerOptions[1]?.text || "",
+					flag2: q.answerOptions[1]?.isCorrect ? "True" : "False",
+					rationale2: q.answerOptions[1]?.rationale || "",
+
+					option3: q.answerOptions[2]?.text || "",
+					flag3: q.answerOptions[2]?.isCorrect ? "True" : "False",
+					rationale3: q.answerOptions[2]?.rationale || "",
+
+					option4: q.answerOptions[3]?.text || "",
+					flag4: q.answerOptions[3]?.isCorrect ? "True" : "False",
+					rationale4: q.answerOptions[3]?.rationale || "",
+				};
+			});
+			console.log(
+				"[Anki Bridge] 🗃️ Mapped cards count:",
+				cards.length,
+				"Example card:",
+				cards[0],
+			);
+
+			console.log(
+				"[Anki Bridge] 📤 Posting ANKI_EXTRACTED_DATA to top window...",
+			);
+			window.top.postMessage(
+				{
+					action: "ANKI_EXTRACTED_DATA",
+					cards: cards,
+					deckTitle: finalTitle,
+					nbTitle: nbTitle,
+					quizTitle: quizTitle,
+				},
+				"*",
+			);
+		} catch (e) {
+			console.error("[Anki Bridge] ❌ Error in processBatch:", e);
+			window.top.postMessage(
+				{
+					action: "ANKI_REAL_FAIL",
+					error: `JSON Parse Error: ${e.message}`,
+				},
+				"*",
+			);
+		}
+	}
+
+	// UI INJECTOR (Standard)
+	/**
+	 * Flag to indicate if the Data Miner (scraper) is connected and ready.
+	 * @type {boolean}
+	 */
+	let isMinerConnected = false;
+	/**
+	 * Flag to prevent duplicate extraction processing if already extracting/exporting.
+	 * @type {boolean}
+	 */
+	let isExporting = false;
+	/**
+	 * The cached HTML template for the export button.
+	 * @type {string|null}
+	 */
+	let buttonTemplate = null;
+
+	/**
+	 * Initializes the UI injector by pre-fetching templates (button and modal HTML),
+	 * setting up message event listeners for communication, and observing the DOM
+	 * to insert the export button near anchor elements.
+	 * @returns {Promise<void>}
+	 */
+	async function initUiInjector() {
+		console.log("[Anki Bridge] 🛠️ initUiInjector started in Top Window.");
+		// Pre-fetch templates
+		try {
+			console.log("[Anki Bridge] 📥 Fetching button.html...");
+			const btnRes = await fetch(chrome.runtime.getURL("button.html"));
+			buttonTemplate = await btnRes.text();
+			console.log("[Anki Bridge] ✅ button.html loaded.");
+
+			console.log("[Anki Bridge] 📥 Fetching modal.html...");
+			const modalRes = await fetch(chrome.runtime.getURL("modal.html"));
+			const modalHtml = await modalRes.text();
+			console.log("[Anki Bridge] ✅ modal.html loaded.");
+
+			const div = document.createElement("div");
+			div.innerHTML = modalHtml;
+			// Append all template nodes from the fetched HTML
+			while (div.firstChild) {
+				document.body.appendChild(div.firstChild);
+			}
+			console.log("[Anki Bridge] 🏗️ Modal templates appended to body.");
+		} catch (e) {
+			console.error("[Anki Bridge] ❌ Failed to load UI templates:", e);
+		}
+
+		window.addEventListener("message", (event) => {
+			console.log(
+				"[Anki Bridge] 📥 Top Window received message action:",
+				event.data?.action,
+			);
+			if (event.data.action === "ANKI_MINER_READY") {
+				isMinerConnected = true;
+				console.log(
+					"[Anki Bridge] ✅ Data Miner is connected and ready.",
+				);
+				updateButtonState("ready");
+			} else if (event.data.action === "ANKI_REAL_SUCCESS") {
+				console.log(
+					"[Anki Bridge] 🎉 Export successful! Count:",
+					event.data.count,
+					"Skipped:",
+					event.data.skipped,
+				);
+				isExporting = false;
+				updateButtonState(
+					"success",
+					event.data.count,
+					event.data.skipped,
+				);
+			} else if (event.data.action === "ANKI_REAL_FAIL") {
+				console.error(
+					"[Anki/AnkiConnect Error] Export Failed:",
+					event.data.error,
+				);
+				isExporting = false;
+				showErrorModal(event.data.error);
+				updateButtonState("error");
+			} else if (event.data.action === "ANKI_EXTRACTED_DATA") {
+				console.log(
+					"[Anki Bridge] 📦 Extracted cards received on top window:",
+					event.data.cards?.length,
+				);
+				handleExtractedData(
+					event.data.cards,
+					event.data.deckTitle,
+					event.data.nbTitle,
+					event.data.quizTitle,
+				);
+			}
+		});
+
+		const observer = new MutationObserver(() => {
+			if (!buttonTemplate || document.getElementById(CONFIG.BUTTON_ID))
+				return;
+			let anchorBtn = null;
+			for (const selector of CONFIG.ANCHOR_SELECTORS) {
+				const found = document.querySelector(selector);
+				if (found) {
+					anchorBtn = found;
+					break;
+				}
+			}
+			if (anchorBtn) {
+				const container =
+					anchorBtn.closest("div.flex") || anchorBtn.parentElement;
+				if (container) {
+					console.log(
+						"[Anki Bridge] 🏷️ Injected export button to DOM container.",
+					);
+					container.insertBefore(
+						createAngularCloneButton(),
+						container.firstChild,
+					);
+				}
+			}
+		});
+		observer.observe(document.body, { childList: true, subtree: true });
+	}
+
+	/**
+	 * Handles the parsed flashcard data and deck title by checking if the deck already
+	 * exists in Anki, prompting the user for resolution if it does, or exporting it directly.
+	 * @param {Object[]} cards - Array of card objects to export.
+	 * @param {string} deckTitle - The proposed name of the deck (legacy fallback).
+	 * @param {string} nbTitle - The notebook title.
+	 * @param {string} quizTitle - The quiz artifact title.
+	 * @returns {void}
+	 */
+	function handleExtractedData(cards, deckTitle, nbTitle, quizTitle) {
+		let finalDeckTitle = deckTitle;
+		const finalNbTitle = nbTitle || "Unknown Notebook";
+		let finalQuizTitle = quizTitle || "Quiz";
+
+		const domQuizTitle = getQuizTitle();
+		console.log(
+			"[Anki Bridge] 🏷️ getQuizTitle() from top window DOM:",
+			domQuizTitle,
+		);
+		if (domQuizTitle) {
+			finalQuizTitle = domQuizTitle;
+		}
+
+		let formattedQuizTitle = finalQuizTitle.replace(/::/g, " - ").trim();
+		// Strip the "Quiz | ", "Quiz - ", "Quiz: " prefix and " Quiz" suffix
+		formattedQuizTitle = formattedQuizTitle.replace(
+			/^Quiz\s*[|\-:]\s*/i,
+			"",
+		);
+		formattedQuizTitle = formattedQuizTitle.replace(/\s*Quiz$/i, "");
+
+		const formattedNbTitle = finalNbTitle.replace(/::/g, " - ").trim();
+
+		finalDeckTitle = quizDeckNameTemplate
+			.replace("{notebookName}", formattedNbTitle)
+			.replace("{quizName}", formattedQuizTitle);
+
+		console.log(
+			"[Anki Bridge] 🏷️ Refined final deck title:",
+			finalDeckTitle,
+		);
+
+		console.log(
+			"[Anki Bridge] ⚙️ handleExtractedData: Title:",
+			finalDeckTitle,
+			"Cards Count:",
+			cards.length,
+		);
+		// Prevent duplicate extraction processing if already extracting/exporting
+		if (isExporting) {
+			console.warn(
+				"[Anki Bridge] ⚠️ Export already in progress, ignoring duplicate extracted data event.",
+			);
+			return;
+		}
+		isExporting = true;
+
+		console.log(
+			"[Anki Bridge] 📞 Sending checkDeckExists message to background worker for deck:",
+			finalDeckTitle,
+		);
+		chrome.runtime.sendMessage(
+			{ action: "checkDeckExists", deckName: finalDeckTitle },
+			(res) => {
+				console.log("[Anki Bridge] 📞 checkDeckExists response:", res);
+				if (!res?.success) {
+					console.error(
+						"[Anki Bridge] ❌ checkDeckExists query failed:",
+						res ? res.error : "No response object",
+					);
+					window.top.postMessage(
+						{
+							action: "ANKI_REAL_FAIL",
+							error: res
+								? res.error
+								: "Unknown Error checking deck",
+						},
+						"*",
+					);
+					return;
+				}
+
+				if (res.exists) {
+					console.log(
+						"[Anki Bridge] ⚠️ Deck already exists. Showing duplicate resolution modal.",
+					);
+					showDuplicateModal(
+						finalDeckTitle,
+						(userAction, resolvedDeckTitle) => {
+							console.log(
+								"[Anki Bridge] 👤 User resolved duplicate modal with action:",
+								userAction,
+								"Deck:",
+								resolvedDeckTitle,
+							);
+							if (userAction === "cancel") {
+								isExporting = false;
+								updateButtonState("ready");
+								return;
+							}
+							sendBatchToAnkiBackground(
+								cards,
+								resolvedDeckTitle,
+								userAction,
+							);
+						},
+					);
+				} else {
+					console.log(
+						"[Anki Bridge] 🆕 Deck does not exist. Proceeding with export.",
+					);
+					// Default if not exists
+					sendBatchToAnkiBackground(cards, finalDeckTitle, "merge");
+				}
+			},
+		);
+	}
+
+	/**
+	 * Sends the batch of cards to the background script to perform the actual
+	 * import/creation of the deck in Anki.
+	 * @param {Object[]} cards - Array of card objects.
+	 * @param {string} deckTitle - The title of the deck.
+	 * @param {string} duplicateAction - Resolution strategy ("merge", "increment", "overwrite").
+	 * @returns {void}
+	 */
+	function sendBatchToAnkiBackground(cards, deckTitle, duplicateAction) {
+		chrome.runtime.sendMessage(
+			{
+				action: "sendBatchToAnki",
+				batchData: cards,
+				deckTitle: deckTitle,
+				duplicateAction: duplicateAction,
+			},
+			(res) => {
+				if (res?.success) {
+					window.top.postMessage(
+						{
+							action: "ANKI_REAL_SUCCESS",
+							count: res.count,
+							deck: deckTitle,
+							skipped: res.skipped,
+						},
+						"*",
+					);
+				} else {
+					window.top.postMessage(
+						{
+							action: "ANKI_REAL_FAIL",
+							error: res ? res.error : "Unknown Error",
+						},
+						"*",
+					);
+				}
+			},
+		);
+	}
+
+	/**
+	 * Shows the duplicate deck resolution modal to the user.
+	 * @param {string} deckTitle - The name of the existing deck.
+	 * @param {function(string, string=): void} callback - Callback function invoked with the resolved duplicate action and the final deck title.
+	 * @returns {void}
+	 */
+	function showDuplicateModal(deckTitle, callback) {
+		const overlay = document.getElementById("anki-duplicate-modal-overlay");
+		if (!overlay) {
+			console.error("Modal overlay not found");
+			return;
+		}
+
+		const titleEl = document.getElementById("anki-modal-deck-title");
+		const titleIncEl = document.getElementById("anki-modal-deck-title-inc");
+		if (titleEl) titleEl.innerText = deckTitle;
+		if (titleIncEl) titleIncEl.innerText = `${deckTitle} (1)`;
+
+		overlay.classList.add("show");
+
+		const close = () => {
+			overlay.classList.remove("show");
+		};
+
+		document.getElementById("anki-btn-merge").onclick = () => {
+			close();
+			callback("merge", deckTitle);
+		};
+		document.getElementById("anki-btn-increment").onclick = () => {
+			close();
+			callback("increment", `${deckTitle} (1)`);
+		};
+		document.getElementById("anki-btn-overwrite").onclick = () => {
+			close();
+			callback("overwrite", deckTitle);
+		};
+		document.getElementById("anki-btn-cancel").onclick = () => {
+			close();
+			callback("cancel");
+		};
+	}
+
+	/**
+	 * Formats raw error messages (including Python-style lists from AnkiConnect) by counting
+	 * and summarizing duplicate error occurrences.
+	 * @param {string|Array} errorVal - The raw error value.
+	 * @returns {string} The formatted error summary text.
+	 */
+	function formatErrorMessage(errorVal) {
+		if (!errorVal) return "Unknown Error";
+
+		let errorStr = "";
+		if (Array.isArray(errorVal)) {
+			errorStr = JSON.stringify(errorVal);
+		} else {
+			errorStr = String(errorVal);
+		}
+
+		let messages = [];
+		if (errorStr.trim().startsWith("[") && errorStr.trim().endsWith("]")) {
+			try {
+				const regex = /['"](.*?)['"]/g;
+				const matches = errorStr.matchAll(regex);
+				for (const match of matches) {
+					messages.push(match[1]);
+				}
+			} catch {
+				messages = [errorStr];
+			}
+		} else {
+			messages = [errorStr];
+		}
+
+		if (messages.length === 0) {
+			messages = [errorStr];
+		}
+
+		const counts = {};
+		for (const msg of messages) {
+			counts[msg] = (counts[msg] || 0) + 1;
+		}
+
+		const formattedLines = Object.entries(counts).map(([msg, count]) => {
+			if (count > 1) {
+				return `${msg} (x${count})`;
+			}
+			return msg;
+		});
+
+		return formattedLines.join("\n");
+	}
+
+	/**
+	 * Shows the custom error modal with formatted error text.
+	 * @param {string} errorText - The raw error text returned from the export.
+	 * @returns {void}
+	 */
+	function showErrorModal(errorText) {
+		const overlay = document.getElementById("anki-error-modal-overlay");
+		if (!overlay) {
+			console.error("[Anki Bridge] Error modal overlay not found");
+			alert(`⚠️ Export Failed:\n${formatErrorMessage(errorText)}`);
+			return;
+		}
+
+		const contentEl = document.getElementById("anki-error-modal-content");
+		if (contentEl) {
+			contentEl.innerText = formatErrorMessage(errorText);
+		}
+
+		overlay.classList.add("show");
+
+		const closeBtn = document.getElementById("anki-error-btn-close");
+		if (closeBtn) {
+			closeBtn.onclick = () => {
+				overlay.classList.remove("show");
+			};
+		}
+	}
+
+	/**
+	 * Attempts to retrieve the current notebook title from standard page elements
+	 * or the document title.
+	 * @returns {string|null} The notebook title, or null if not found.
+	 */
+	function getNotebookTitle() {
+		const input = document.querySelector(
+			'input[placeholder="Notebook title"]',
+		);
+		if (input?.value) {
+			return input.value.trim();
+		}
+
+		const label = document.querySelector(".title-label");
+		if (label?.textContent) {
+			return label.textContent.trim();
+		}
+		if (document.title?.includes("- NotebookLM")) {
+			return document.title.replace("- NotebookLM", "").trim();
+		}
+		return null;
+	}
+
+	/**
+	 * Attempts to retrieve the quiz title from the DOM.
+	 * Checks the current document and the top document if within an iframe.
+	 * @returns {string|null} The extracted quiz title, or null if not found.
+	 */
+	function getQuizTitle() {
+		const selectors = [
+			'input[formcontrolname="title"]',
+			'input[aria-label="Artifact title"]',
+			"input.artifact-title",
+		];
+
+		for (const selector of selectors) {
+			const el = document.querySelector(selector);
+			if (el) {
+				const val = el.value || el.getAttribute("value");
+				if (val && val !== "undefined" && String(val).trim() !== "") {
+					return String(val).trim();
+				}
+			}
+		}
+
+		if (window !== window.top) {
+			try {
+				for (const selector of selectors) {
+					const el = window.top.document.querySelector(selector);
+					if (el) {
+						const val = el.value || el.getAttribute("value");
+						if (
+							val &&
+							val !== "undefined" &&
+							String(val).trim() !== ""
+						) {
+							return String(val).trim();
+						}
+					}
+				}
+			} catch (e) {
+				console.warn(
+					"[Anki Bridge] Could not access top frame DOM for quiz title:",
+					e,
+				);
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Creates and configures the "Anki Export" button, including its click handler
+	 * that triggers status checking and initiates data extraction.
+	 * @returns {HTMLElement} The created button element.
+	 */
+	function createAngularCloneButton() {
+		const tempDiv = document.createElement("div");
+		tempDiv.innerHTML = buttonTemplate;
+		const btn = tempDiv.firstElementChild;
+
+		btn.onclick = (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (!isMinerConnected) {
+				alert("Wait for page to fully load...");
+				return;
+			}
+
+			// Pre-flight check
+			chrome.runtime.sendMessage({ action: "checkAnkiStatus" }, (res) => {
+				if (!res?.success) {
+					alert("⚠️ AnkiConnect not found! Is Anki running?");
+					return;
+				}
+
+				btn.classList.remove(
+					"notebooklm-to-anki-btn-ready",
+					"notebooklm-to-anki-btn-success",
+					"notebooklm-to-anki-btn-error",
+				);
+				btn.classList.add("notebooklm-to-anki-btn-extracting");
+				const labelText = btn.querySelector(
+					".notebooklm-to-anki-btn-label span:last-child",
+				);
+				if (labelText) labelText.innerText = "Extracting...";
+				const deckName = getNotebookTitle();
+				if (!deckName) {
+					const manualName = prompt("Enter Notebook Name:");
+					if (!manualName) {
+						updateButtonState("ready");
+						return;
+					}
+				}
+				const iframes = document.querySelectorAll("iframe");
+				iframes.forEach((iframe) => {
+					iframe.contentWindow.postMessage(
+						{
+							action: "ANKI_TRIGGER_EXTRACT",
+							notebookTitle: deckName || manualName,
+						},
+						"*",
+					);
+				});
+			});
+		};
+		return btn;
+	}
+
+	/**
+	 * Updates the visual state, text label, and disabled state of the Anki Export button.
+	 * @param {string} state - The target state ("ready", "extracting", "success", "error").
+	 * @param {number} [count=0] - Number of cards saved (for success state).
+	 * @param {number} [skipped=0] - Number of cards skipped as duplicates (for success state).
+	 * @returns {void}
+	 */
+	function updateButtonState(state, count = 0, skipped = 0) {
+		const btn = document.getElementById(CONFIG.BUTTON_ID);
+		if (!btn) return;
+
+		const labelText = btn.querySelector(
+			".notebooklm-to-anki-btn-label span:last-child",
+		);
+
+		// Clear dynamic states
+		btn.classList.remove(
+			"notebooklm-to-anki-btn-ready",
+			"notebooklm-to-anki-btn-success",
+			"notebooklm-to-anki-btn-error",
+			"notebooklm-to-anki-btn-extracting",
+		);
+
+		if (state === "ready") {
+			if (labelText) {
+				labelText.innerText = "Anki Export";
+			}
+			btn.classList.add("notebooklm-to-anki-btn-ready");
+			btn.disabled = false;
+		} else if (state === "success") {
+			let msg = `Saved ${count}!`;
+			if (skipped > 0) msg = `Saved ${count}, Skipped ${skipped}`;
+			if (labelText) {
+				labelText.innerText = msg;
+			}
+			btn.classList.add("notebooklm-to-anki-btn-success");
+			setTimeout(() => updateButtonState("ready"), 4000);
+		} else if (state === "error") {
+			if (labelText) {
+				labelText.innerText = "Error";
+			}
+			btn.classList.add("notebooklm-to-anki-btn-error");
+			setTimeout(() => updateButtonState("ready"), 3000);
+		}
+	}
+
+	initDataMiner();
+	if (window === window.top) {
+		initUiInjector();
+	}
 })();

@@ -1,18 +1,29 @@
 {
+  "$schema": "https://json.schemastore.org/chrome-manifest",
   "manifest_version": 3,
   "name": "NotebookLM to Anki",
-  "version": "2.0",
-  "description": "Exports NotebookLM Quizzes to Anki v5.0 Template",
-  "permissions": [
-    "storage",
-    "scripting"
-  ],
+  "version": "3.0.1",
+  "description": "Exports NotebookLM Quizzes to Anki",
+  "permissions": ["storage", "scripting"],
   "host_permissions": [
+    "https://notebook.google.com/*",
     "https://notebooklm.google.com/*",
     "https://*.usercontent.goog/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
@@ -20,13 +31,25 @@
   "content_scripts": [
     {
       "matches": [
+        "https://notebook.google.com/*",
         "https://notebooklm.google.com/*",
         "https://*.usercontent.goog/*"
       ],
       "js": ["content.js"],
+      "css": ["modal.css"],
       "all_frames": true,
       "match_origin_as_fallback": true,
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["modal.html", "button.html"],
+      "matches": [
+        "https://notebook.google.com/*",
+        "https://notebooklm.google.com/*",
+        "https://*.usercontent.goog/*"
+      ]
     }
   ]
 }
