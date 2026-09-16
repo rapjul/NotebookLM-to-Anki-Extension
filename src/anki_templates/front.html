@@ -9,7 +9,11 @@
 			<div class="question-text" id="q-text"></div>
 
 			<!-- Inline Question Image / Diagram -->
-			<div class="question-media" id="q-media"></div>
+			{{#Image}}
+			<div class="question-media" id="q-media">{{Image}}</div>
+			{{/Image}} {{^Image}} {{#ArchDiagram}}
+			<div class="question-media" id="q-media">{{ArchDiagram}}</div>
+			{{/ArchDiagram}} {{/Image}}
 
 			<!-- Dynamic Question Interface Container -->
 			<div id="front-interactive-area">
@@ -38,7 +42,11 @@
 <div id="raw-data" style="display: none">
 	<div id="d-question">{{Question}}</div>
 	<div id="d-hint">{{Hint}}</div>
-	<div id="d-image">{{Image}}{{ArchDiagram}}</div>
+	{{#Image}}
+	<div id="d-image">{{Image}}</div>
+	{{/Image}} {{^Image}} {{#ArchDiagram}}
+	<div id="d-image">{{ArchDiagram}}</div>
+	{{/ArchDiagram}} {{/Image}}
 	<div id="d-qtype">{{QuestionType}}</div>
 	<div id="d-target">{{TargetAnswer}}</div>
 	<div id="d-acceptable">{{AcceptableAnswers}}</div>
@@ -75,6 +83,13 @@
 	(function () {
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
 		// EXCEPT when interacting with inputs, buttons, options, or hint.
+		/**
+		 * Intercepts tap/click events to prevent premature flipping on mobile platforms.
+		 * Allows interaction only for recognized interactive controls.
+		 *
+		 * @param {Event} e - The click or touchend event.
+		 * @returns {void}
+		 */
 		const interceptTap = (e) => {
 			const isInteractive =
 				e.target &&
@@ -92,10 +107,20 @@
 		window.addEventListener("touchend", interceptTap, true);
 
 		// --- 1. THE TRANSLATOR (Fixes $$ -> \[) ---
+		/**
+		 * Converts LaTeX math notation ($$ ... $$ and $ ... $) and backtick code snippets
+		 * into Anki MathJax delimiters and HTML code tags.
+		 *
+		 * @param {string} str - Raw input string with math or code markdown.
+		 * @returns {string} Sanitized string with MathJax brackets and code tags.
+		 */
 		function cleanMath(str) {
 			if (!str) return "";
+			// Convert Block Math: $$ ... $$ -> \[ ... \]
 			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
+			// Convert Inline Math: $ ... $ -> \( ... \)
 			s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, "\\($1\\)");
+			// Convert Code: `...` -> <code>...</code>
 			s = s.replace(
 				/`([^`]+)`/g,
 				'<code class="latex-snippet">$1</code>',
@@ -104,6 +129,13 @@
 		}
 
 		// --- 2. MATH RENDERER ---
+		/**
+		 * Triggers MathJax typesetting on the specified DOM element.
+		 * Supports both MathJax v3 (typesetPromise) and MathJax v2 (Hub.Queue).
+		 *
+		 * @param {HTMLElement} element - Target container element to typeset.
+		 * @returns {void}
+		 */
 		function triggerMath(element) {
 			if (typeof MathJax !== "undefined" && MathJax.typesetPromise) {
 				MathJax.typesetPromise([element]).catch((err) => {});
@@ -113,6 +145,12 @@
 		}
 
 		// Flip card to back helper
+		/**
+		 * Dispatches answer revelation command to flip the card to the back side
+		 * across Desktop, AnkiMobile, and AnkiDroid platforms.
+		 *
+		 * @returns {void}
+		 */
 		function flipToBack() {
 			if (typeof pycmd !== "undefined") {
 				pycmd("ans");
@@ -130,17 +168,20 @@
 			// --- 3. PROCESS QUESTION, MEDIA & HINT ---
 			const qRaw = document.getElementById("d-question").innerHTML;
 			const hRaw = document.getElementById("d-hint").innerHTML;
-			const imgRaw = document.getElementById("d-image").innerHTML.trim();
+			const dImage = document.getElementById("d-image");
+			const imgRaw = dImage ? dImage.innerHTML.trim() : "";
 
 			document.getElementById("q-text").innerHTML = cleanMath(qRaw);
 
 			// Render inline image if present
 			const mediaBox = document.getElementById("q-media");
-			if (imgRaw && imgRaw.length > 0) {
-				mediaBox.innerHTML = imgRaw;
-				mediaBox.style.display = "block";
-			} else {
-				mediaBox.style.display = "none";
+			if (mediaBox) {
+				if (imgRaw && imgRaw.length > 0) {
+					mediaBox.innerHTML = imgRaw;
+					mediaBox.style.display = "block";
+				} else {
+					mediaBox.style.display = "none";
+				}
 			}
 
 			// Render hint
@@ -276,6 +317,12 @@
 				const inputEl = document.getElementById("fitb-input");
 				const submitBtn = document.getElementById("fitb-submit-btn");
 
+				/**
+				 * Saves the typed fill-in-the-blank response to sessionStorage and flips the card.
+				 *
+				 * @param {Event} [e] - Optional triggering click or keyboard event.
+				 * @returns {void}
+				 */
 				const doSubmit = (e) => {
 					if (e) e.stopPropagation();
 					const val = inputEl.value.trim();
@@ -320,6 +367,7 @@
 					flipToBack();
 				});
 			} else {
+				// --- 4. PROCESS OPTIONS ---
 				// MULTIPLE CHOICE: Standard single-choice options
 				interactiveArea.innerHTML = `<div class="options-list" id="front-options"></div>`;
 				const container = document.getElementById("front-options");
@@ -343,7 +391,10 @@
 				validItems.forEach((item, index) => {
 					const originalLetter = item.dataset.opt;
 					const displayLetter = String.fromCharCode(65 + index);
-					const text = cleanMath(item.dataset.text || "");
+					const rawText = item.dataset.text || "";
+
+					// Apply Translator
+					const text = cleanMath(rawText);
 					const flagStr = (item.dataset.flag || "")
 						.trim()
 						.toLowerCase();
@@ -362,6 +413,11 @@
 						</div>
 					`;
 
+					/**
+					 * Persists the selected option letter and its correctness flag to sessionStorage.
+					 *
+					 * @returns {void}
+					 */
 					const saveState = () => {
 						try {
 							sessionStorage.setItem(

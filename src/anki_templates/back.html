@@ -4,7 +4,11 @@
 			<div class="question-text" id="back-q-text"></div>
 
 			<!-- Inline Question Image / Diagram -->
-			<div class="question-media" id="back-q-media"></div>
+			{{#Image}}
+			<div class="question-media" id="back-q-media">{{Image}}</div>
+			{{/Image}} {{^Image}} {{#ArchDiagram}}
+			<div class="question-media" id="back-q-media">{{ArchDiagram}}</div>
+			{{/ArchDiagram}} {{/Image}}
 
 			<!-- Dynamic Feedback & Results Area -->
 			<div id="back-interactive-area">
@@ -19,7 +23,11 @@
 
 <div id="back-data" style="display: none">
 	<div id="d-question">{{Question}}</div>
-	<div id="d-image">{{Image}}{{ArchDiagram}}</div>
+	{{#Image}}
+	<div id="d-image">{{Image}}</div>
+	{{/Image}} {{^Image}} {{#ArchDiagram}}
+	<div id="d-image">{{ArchDiagram}}</div>
+	{{/ArchDiagram}} {{/Image}}
 	<div id="d-qtype">{{QuestionType}}</div>
 	<div id="d-target">{{TargetAnswer}}</div>
 	<div id="d-acceptable">{{AcceptableAnswers}}</div>
@@ -59,6 +67,14 @@
 		setTimeout(() => {
 			const wrapper = document.querySelector(".main-wrapper");
 			if (wrapper) {
+				/**
+				 * Intercepts tap/click events on the back side of the card.
+				 * Prevents option clicks from prematurely advancing on mobile, while allowing
+				 * background taps to trigger card grading.
+				 *
+				 * @param {Event} e - Click or touch event.
+				 * @returns {void}
+				 */
 				const intercept = (e) => {
 					const isInteractive =
 						e.target.closest(".option-block") ||
@@ -67,6 +83,8 @@
 					if (isInteractive) {
 						e.stopPropagation();
 					} else {
+						// For background taps, simulate continue button click for Desktop/AnkiDroid.
+						// We do NOT stop propagation so AnkiMobile natively grades the card.
 						if (!e.target.closest(".continue-btn")) {
 							const continueBtn =
 								document.querySelector(".continue-btn");
@@ -81,6 +99,13 @@
 			}
 		}, 0);
 
+		/**
+		 * Converts LaTeX math notation ($$ ... $$ and $ ... $) and backtick code snippets
+		 * into Anki MathJax delimiters and HTML code tags.
+		 *
+		 * @param {string} str - Raw input string with math or code markdown.
+		 * @returns {string} Sanitized string with MathJax brackets and code tags.
+		 */
 		function cleanMath(str) {
 			if (!str) return "";
 			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
@@ -92,6 +117,13 @@
 			return s;
 		}
 
+		/**
+		 * Triggers MathJax typesetting on the specified DOM element.
+		 * Supports both MathJax v3 (typesetPromise) and MathJax v2 (Hub.Queue).
+		 *
+		 * @param {HTMLElement} element - Target container element to typeset.
+		 * @returns {void}
+		 */
 		function triggerMath(element) {
 			if (typeof MathJax !== "undefined" && MathJax.typesetPromise) {
 				MathJax.typesetPromise([element]).catch((err) => {});
@@ -100,6 +132,13 @@
 			}
 		}
 
+		/**
+		 * Normalizes a fill-in-the-blank user response or accepted answer string
+		 * by trimming, lowercasing, and stripping surrounding math dollar delimiters.
+		 *
+		 * @param {string|null|undefined} str - Raw answer string.
+		 * @returns {string} Normalized lowercase string.
+		 */
 		function normalizeBlank(str) {
 			if (!str) return "";
 			return String(str)
@@ -109,6 +148,13 @@
 				.trim();
 		}
 
+		/**
+		 * Dispatches answer grading command to Anki (ease3 for Good, ease1 for Again)
+		 * across Desktop, AnkiMobile, and AnkiDroid platforms.
+		 *
+		 * @param {boolean} isCorrect - True if user answered correctly (ease3), false if incorrect (ease1).
+		 * @returns {void}
+		 */
 		function gradeCard(isCorrect) {
 			if (typeof pycmd !== "undefined") {
 				pycmd(isCorrect ? "ease3" : "ease1");
@@ -117,6 +163,13 @@
 			}
 		}
 
+		/**
+		 * Renders the continue/grading action button into the action container.
+		 *
+		 * @param {boolean} isCorrect - Whether the user got the question right.
+		 * @param {string|null} [label=null] - Optional custom text label for the button.
+		 * @returns {void}
+		 */
 		function renderContinueButton(isCorrect, label = null) {
 			const actionContainer = document.getElementById("action-container");
 			if (!actionContainer) return;
@@ -135,18 +188,21 @@
 		}
 
 		try {
+			// Translate Question
 			const qRaw = document.getElementById("d-question").innerHTML;
-			const imgRaw = document.getElementById("d-image").innerHTML.trim();
-
 			document.getElementById("back-q-text").innerHTML = cleanMath(qRaw);
 
 			// Render inline image if present
+			const dImage = document.getElementById("d-image");
+			const imgRaw = dImage ? dImage.innerHTML.trim() : "";
 			const mediaBox = document.getElementById("back-q-media");
-			if (imgRaw && imgRaw.length > 0) {
-				mediaBox.innerHTML = imgRaw;
-				mediaBox.style.display = "block";
-			} else {
-				mediaBox.style.display = "none";
+			if (mediaBox) {
+				if (imgRaw && imgRaw.length > 0) {
+					mediaBox.innerHTML = imgRaw;
+					mediaBox.style.display = "block";
+				} else {
+					mediaBox.style.display = "none";
+				}
 			}
 
 			const qRawForId = document.getElementById("d-question").innerHTML;
