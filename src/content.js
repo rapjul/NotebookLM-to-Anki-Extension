@@ -662,10 +662,10 @@
 					".notebooklm-to-anki-btn-label span:last-child",
 				);
 				if (labelText) labelText.innerText = "Extracting...";
-				const deckName = getNotebookTitle();
+				let deckName = getNotebookTitle();
 				if (!deckName) {
-					const manualName = prompt("Enter Notebook Name:");
-					if (!manualName) {
+					deckName = prompt("Enter Notebook Name:");
+					if (!deckName) {
 						updateButtonState("ready");
 						return;
 					}
@@ -675,7 +675,7 @@
 					iframe.contentWindow.postMessage(
 						{
 							action: "ANKI_TRIGGER_EXTRACT",
-							notebookTitle: deckName || manualName,
+							notebookTitle: deckName,
 						},
 						"*",
 					);
