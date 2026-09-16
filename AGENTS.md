@@ -40,6 +40,7 @@ Located under `./src/anki_templates/` directory. These govern how the exported n
 The test suite uses Node.js 24's native test runner (`node:test` and `node:assert/strict`) with zero external runtime dependencies.
 
 - [helpers/utils.js](./tests/helpers/utils.js): ES module adapter re-exporting shared utilities from `src/utils.js`.
+- [helpers/mock-chrome.js](./tests/helpers/mock-chrome.js): Zero-dependency in-memory mock harness for Chrome Extension APIs (`chrome.storage`, `chrome.runtime`, `chrome.tabs`, `chrome.scripting`) and minimal DOM simulation for Node.js test execution.
 - [fixtures/standard-quiz.json](./tests/fixtures/standard-quiz.json): Sanitized academic quiz fixtures covering basic chemistry and astronomy.
 - [fixtures/math-physics-quiz.json](./tests/fixtures/math-physics-quiz.json): Mathematical formulas verifying LaTeX rendering across algebra, geometry, trigonometry, calculus, and quantum physics.
 - [fixtures/edge-cases-quiz.json](./tests/fixtures/edge-cases-quiz.json): Edge-case payloads covering HTML entity escaping, missing optional hints, partial option sets, and nested query structures.
@@ -48,6 +49,9 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/transformer.test.js](./tests/unit/transformer.test.js): Unit tests for JSON extraction, 4-option card normalization, LaTeX preservation, and 15-field Anki payload mapping.
 - [unit/deduplication.test.js](./tests/unit/deduplication.test.js): Unit tests for question text normalization, duplicate note filtering, and skipped duplicate counts.
 - [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, CSS selectors, and extension manifest validity.
+- [unit/background.test.js](./tests/unit/background.test.js): Unit tests for background service worker message routing, AnkiConnect HTTP requests, model creation, and batch export flows.
+- [unit/popup.test.js](./tests/unit/popup.test.js): Unit tests for configuration popup UI initialization, settings persistence, debug toggle, and active tab script injection.
+- [unit/content.test.js](./tests/unit/content.test.js): Unit tests for content script data mining, iframe messaging, UI button injection, duplicate modal workflows, and error display.
 - [integration/anki-connect.test.js](./tests/integration/anki-connect.test.js): Contract integration tests with mocked network calls verifying AnkiConnect status checks, model creation, and batch export flows (`merge`, `overwrite`, `increment`).
 
 ---
