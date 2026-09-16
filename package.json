@@ -7,7 +7,10 @@
   "description": "Exports NotebookLM Quizzes to Anki",
   "scripts": {
     "build": "web-ext build --config .web-ext-config.cjs",
-    "lint": "web-ext lint --config .web-ext-config.cjs"
+    "lint": "web-ext lint --config .web-ext-config.cjs",
+    "test": "node --test tests/**/*.test.js",
+    "test:watch": "node --test --watch tests/**/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage tests/**/*.test.js"
   },
   "devDependencies": {
     "web-ext": "^10.6.0"
