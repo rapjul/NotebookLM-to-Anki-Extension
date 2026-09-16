@@ -7,12 +7,12 @@ This Chrome extension bridges the gap between Google Notebook (formerly Notebook
 - **Multi-Format Question Support:** Ingests and renders all 4 question types supported by Google Notebook:
     - **Multiple Choice:** Single-select options with instant auto-flip and continue grading buttons.
     - **Multiple Select:** Interactive checkbox selection, correctness badges, detailed rationales, and score summaries (`X/Y Correct`).
-    - **Fill in the Blank:** Text input on front with auto-grading (`ease3`/`ease1`) matching against normalized accepted answers on back.
+    - **Fill in the Blank:** Text input on front with automatic grading (Good / Again) matching against accepted answers on back.
     - **Short Answer:** Self-study prompt with optional scratchpad on front, revealing model answer, rubric checklist, and common misconceptions on back.
-- **Diagram & Media Caching:** Automatically resolves source diagram references (`data-image-urls`) and downloads them directly into Anki's local media collection via `storeMediaFile` for full offline review.
-- **Covered Topics & Dual Export Tags:** Extracts `topics.covered` and assigns sanitized tags alongside `notebooklm_export` and `google_notebook_export` for easy filtering.
+- **Diagram & Media Caching:** Automatically downloads quiz diagrams and images directly into Anki's local media collection for full offline review.
+- **Covered Topics & Export Tags:** Extracts quiz topics and tags exported cards for easy searching and filtered deck creation.
 - **Smart Math Support:** Automatically detects and formats LaTeX equations (MathJax/KaTeX) for STEM, Physics, and Calculus.
-- **20-Field Adaptive Note Type:** Seamlessly creates or dynamically migrates existing user note types without data loss (renaming `ArchDiagram` to `Image` and adding adaptive fields).
+- **20-Field Adaptive Note Type:** Seamlessly creates or dynamically updates the note type in Anki with zero manual configuration or data loss.
 - **Duplicate Conflict Resolution:** Offers Merge (Skip Duplicates), Auto-Increment, or Overwrite strategies when exporting to existing decks.
 
 ---
@@ -76,11 +76,7 @@ The extension automatically creates and migrates the **"NotebookLM Quiz"** note 
 
 **Math looks like code (e.g., `$\pi$`) instead of symbols ($\pi$)**
 
-- **Fix:** This usually resolves itself after a restart. Ensure you have installed the Note Type using the code in Step 2, as it contains the specific templates required to render math instantly.
-
-**Shift key not working?**
-
-- Check your Windows Sticky Keys settings or your mechanical keyboard's "Game Mode".
+- **Fix:** Restart Anki. Ensure your cards are using the "NotebookLM Quiz" note type created by the extension, which includes built-in MathJax support.
 
 ---
 
