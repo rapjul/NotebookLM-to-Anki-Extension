@@ -14,10 +14,11 @@ test("templates: front.html structure", () => {
 	const frontPath = path.join(srcDir, "anki_templates/front.html");
 	const frontHtml = fs.readFileSync(frontPath, "utf-8");
 
-	// Verify required field replacements for 15-field schema
+	// Verify required field replacements for 20-field schema
 	const requiredFields = [
 		"{{Question}}",
 		"{{Hint}}",
+		"{{Image}}",
 		"{{Option1}}",
 		"{{Option2}}",
 		"{{Option3}}",
@@ -26,6 +27,11 @@ test("templates: front.html structure", () => {
 		"{{Flag2}}",
 		"{{Flag3}}",
 		"{{Flag4}}",
+		"{{QuestionType}}",
+		"{{TargetAnswer}}",
+		"{{AcceptableAnswers}}",
+		"{{Rubric}}",
+		"{{GeneralRationale}}",
 	];
 
 	for (const field of requiredFields) {
@@ -34,6 +40,15 @@ test("templates: front.html structure", () => {
 			`front.html missing required Anki field placeholder: ${field}`,
 		);
 	}
+
+	assert.ok(
+		frontHtml.includes('id="q-media"'),
+		"front.html should include inline question media container",
+	);
+	assert.ok(
+		frontHtml.includes('id="front-interactive-area"'),
+		"front.html should include interactive area container",
+	);
 });
 
 test("templates: back.html structure", () => {
@@ -43,6 +58,7 @@ test("templates: back.html structure", () => {
 	// Verify required field replacements for questions, options, rationales, and flags
 	const requiredFields = [
 		"{{Question}}",
+		"{{Image}}",
 		"{{Option1}}",
 		"{{Option2}}",
 		"{{Option3}}",
@@ -55,6 +71,11 @@ test("templates: back.html structure", () => {
 		"{{Flag2}}",
 		"{{Flag3}}",
 		"{{Flag4}}",
+		"{{QuestionType}}",
+		"{{TargetAnswer}}",
+		"{{AcceptableAnswers}}",
+		"{{Rubric}}",
+		"{{GeneralRationale}}",
 	];
 
 	for (const field of requiredFields) {
@@ -63,18 +84,32 @@ test("templates: back.html structure", () => {
 			`back.html missing required Anki field placeholder: ${field}`,
 		);
 	}
+
+	assert.ok(
+		backHtml.includes('id="back-q-media"'),
+		"back.html should include inline question media container",
+	);
+	assert.ok(
+		backHtml.includes('id="back-interactive-area"'),
+		"back.html should include interactive area container",
+	);
 });
 
 test("templates: styling.css rules", () => {
 	const cssPath = path.join(srcDir, "anki_templates/styling.css");
 	const cssContent = fs.readFileSync(cssPath, "utf-8");
 
-	// Verify essential visual state classes exist
+	// Verify essential visual state classes and multi-format component styles exist
 	const requiredSelectors = [
 		".state-correct",
 		".state-wrong",
 		".state-dimmed",
 		".card",
+		".question-media",
+		".score-pill",
+		".fitb-input",
+		".sa-scratchpad",
+		".feedback-card",
 	];
 
 	for (const selector of requiredSelectors) {

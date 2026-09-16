@@ -110,9 +110,32 @@ body {
 .question-text {
   font-size: 1.35rem;
   font-weight: 500;
-  margin-bottom: 30px;
+  margin-bottom: 25px;
   color: #ffffff;
   line-height: 1.5;
+}
+
+/* Inline Question Media (Diagram / Image) */
+.question-media {
+  margin: 0 0 25px 0;
+  text-align: center;
+}
+
+.question-media img {
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: inline-block;
+}
+
+.diagram-caption {
+  font-size: 0.85rem;
+  color: #9aa0a6;
+  margin-top: 8px;
+  font-style: italic;
+  text-align: center;
 }
 
 .hint-container {
@@ -185,56 +208,323 @@ body {
 .option-content {
   display: flex;
   align-items: flex-start;
-  font-size: 1.05rem;
+  gap: 10px;
 }
 
 .option-letter {
-  font-weight: bold;
-  margin-right: 15px;
   color: #a8c7fa;
-  min-width: 25px;
+  font-weight: bold;
 }
 
-/* 4. FEEDBACK */
-.option-block.state-correct {
-  border: 2px solid #6dd58c;
-  background-color: #252525;
+/* Multi-select Option Checkboxes */
+.ms-option .option-content {
+  align-items: center;
+}
+
+.ms-checkbox {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 2px solid #5f6368;
+  border-radius: 4px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.ms-option.is-selected .ms-checkbox {
+  background-color: #8ab4f8;
+  border-color: #8ab4f8;
+}
+
+.ms-option.is-selected .ms-checkbox::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid #1e1e1e;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-bottom: 2px;
+}
+
+.your-answer-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #8ab4f8;
+  margin-left: 8px;
+}
+
+.score-pill-container {
+  margin-bottom: 20px;
+}
+
+.score-pill {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.pill-correct {
+  background-color: rgba(129, 201, 149, 0.15);
+  color: #81c995;
+  border: 1px solid rgba(129, 201, 149, 0.4);
+}
+
+.pill-wrong {
+  background-color: rgba(242, 139, 130, 0.15);
+  color: #f28b82;
+  border: 1px solid rgba(242, 139, 130, 0.4);
+}
+
+/* Submit and Interaction Buttons */
+.submit-btn {
+  background-color: #8ab4f8;
+  color: #1e1e1e;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 20px;
+  padding: 12px 24px;
+  margin-top: 20px;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease;
 }
 
 @media (hover: hover) {
-  .option-block.state-correct:hover {
-    border: 2px solid #6dd58c;
-    background-color: #252525;
+  .submit-btn:hover {
+    background-color: #aecbfa;
   }
 }
 
-.option-block.state-wrong {
-  border: 2px solid #e87c7c;
+.submit-btn:active {
+  transform: scale(0.99);
+}
+
+/* Fill-in-the-Blank Styles */
+.fitb-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fitb-input {
+  width: 100%;
+  padding: 14px 16px;
+  background-color: #2d2d2d;
+  border: 1px solid #444746;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 1.05rem;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.fitb-input:focus {
+  border-color: #8ab4f8;
+}
+
+/* Short Answer Scratchpad Styles */
+.sa-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sa-scratchpad {
+  width: 100%;
+  padding: 12px 16px;
+  background-color: #2d2d2d;
+  border: 1px solid #444746;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sa-scratchpad:focus {
+  border-color: #8ab4f8;
+}
+
+/* Feedback Cards for Text Questions */
+.feedback-card {
+  padding: 18px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card-correct {
+  background-color: #1e3325;
+  border: 1px solid #81c995;
+}
+
+.card-wrong {
+  background-color: #3b2323;
+  border: 1px solid #f28b82;
+}
+
+.feedback-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.card-correct .feedback-header {
+  color: #81c995;
+}
+
+.card-wrong .feedback-header {
+  color: #f28b82;
+}
+
+.answer-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.answer-label {
+  font-weight: 600;
+  color: #9aa0a6;
+  min-width: 130px;
+}
+
+.answer-value {
+  color: #e3e3e3;
+}
+
+.general-rationale-box {
   background-color: #252525;
+  border: 1px solid #3c4043;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+  color: #cccccc;
+  line-height: 1.6;
 }
 
-@media (hover: hover) {
-  .option-block.state-wrong:hover {
-    border: 2px solid #e87c7c;
-    background-color: #252525;
-  }
+.rationale-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #a8c7fa;
+  margin-bottom: 8px;
+}
+
+.sa-user-scratch {
+  background-color: #262626;
+  border-left: 4px solid #5f6368;
+  padding: 14px 16px;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 16px;
+}
+
+.sa-section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #9aa0a6;
+  margin-bottom: 6px;
+}
+
+.sa-scratch-text {
+  color: #e3e3e3;
+  line-height: 1.5;
+}
+
+.sa-model-answer {
+  background-color: #232b38;
+  border-left: 4px solid #8ab4f8;
+  padding: 16px;
+  border-radius: 0 8px 8px 0;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+
+.sa-model-text {
+  color: #ffffff;
+}
+
+.sa-rubric {
+  background-color: #252525;
+  border: 1px solid #3c4043;
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.sa-rubric-content {
+  color: #e3e3e3;
+  font-size: 0.95rem;
+}
+
+.self-grade-container {
+  margin-top: 25px;
+  text-align: center;
+}
+
+.self-grade-title {
+  font-size: 0.95rem;
+  color: #9aa0a6;
+  margin-bottom: 12px;
+}
+
+.self-grade-buttons {
+  display: flex;
+  gap: 15px;
+}
+
+.self-grade-buttons .continue-btn {
+  margin-top: 0;
+}
+
+/* 4. STATES & FEEDBACK */
+.state-correct {
+  border-color: #81c995 !important;
+  background-color: #1e3325 !important;
+}
+
+.state-wrong {
+  border-color: #f28b82 !important;
+  background-color: #3b2323 !important;
 }
 
 .state-dimmed {
-  opacity: 0.6;
-  /* Slightly visible */
-  pointer-events: none;
+  opacity: 0.5;
 }
 
 .feedback-section {
-  margin-top: 12px;
   display: none;
-  padding-top: 15px;
+  padding-top: 8px;
   border-top: 1px solid #444;
 }
 
 .thats-right {
-  color: #6dd58c;
+  color: #81c995;
   font-weight: bold;
   display: flex;
   align-items: center;
@@ -244,13 +534,12 @@ body {
 }
 
 .not-quite {
-  color: #e87c7c;
+  color: #f28b82;
   font-weight: bold;
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 1.1rem;
-  margin-bottom: 8px;
 }
 
 .rationale-text {
@@ -272,7 +561,6 @@ body {
 .latex-snippet {
   background-color: #383838;
   color: #e6b455;
-  /* Soft Orange/Gold for code contrast */
   padding: 2px 6px;
   border-radius: 4px;
   font-family: "Consolas", "Monaco", monospace;
@@ -312,9 +600,9 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 5px;
+  padding: 12px;
   border-radius: 12px;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: bold;
   cursor: pointer;
   border: none;
@@ -323,6 +611,7 @@ body {
     background-color 0.2s,
     transform 0.1s;
   margin-top: 20px;
+  box-sizing: border-box;
 }
 
 .continue-btn:active {
@@ -350,13 +639,28 @@ body {
 }
 
 /* 9. INTERACTION & POINTER EVENT CONTROLS */
-/* Front Side: Ignore background taps; only allow option blocks & hint button */
+/* Front Side: Ignore background taps; allow interactive elements */
 .mode-centered {
   pointer-events: none;
 }
 
 .mode-centered .option-block,
-.mode-centered .hint-btn {
+.mode-centered .hint-btn,
+.mode-centered .submit-btn,
+.mode-centered .fitb-input,
+.mode-centered .sa-scratchpad,
+.mode-centered .continue-btn,
+.mode-centered .self-grade-buttons button {
+  pointer-events: auto;
+}
+
+#layout-root.mode-centered {
+  pointer-events: auto;
+}
+
+#layout-root .option-block,
+#layout-root .continue-btn,
+#layout-root .self-grade-container button {
   pointer-events: auto;
 }
 

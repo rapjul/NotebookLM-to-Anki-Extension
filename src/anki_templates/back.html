@@ -1,17 +1,31 @@
-<div id="layout-root" class="main-wrapper">
+<div id="layout-root" class="main-wrapper mode-centered">
 	<div class="quiz-column">
 		<div class="quiz-content-wrapper">
 			<div class="question-text" id="back-q-text"></div>
-			<div class="options-list" id="back-options"></div>
+
+			<!-- Inline Question Image / Diagram -->
+			<div class="question-media" id="back-q-media"></div>
+
+			<!-- Dynamic Feedback & Results Area -->
+			<div id="back-interactive-area">
+				<div class="options-list" id="back-options"></div>
+			</div>
+
+			<!-- Primary Action / Continue Button -->
 			<div id="action-container"></div>
 		</div>
 	</div>
-
-	<div class="diagram-column" id="diagram-container">{{ArchDiagram}}</div>
 </div>
 
 <div id="back-data" style="display: none">
 	<div id="d-question">{{Question}}</div>
+	<div id="d-image">{{Image}}{{ArchDiagram}}</div>
+	<div id="d-qtype">{{QuestionType}}</div>
+	<div id="d-target">{{TargetAnswer}}</div>
+	<div id="d-acceptable">{{AcceptableAnswers}}</div>
+	<div id="d-rubric">{{Rubric}}</div>
+	<div id="d-general-rationale">{{GeneralRationale}}</div>
+
 	<div
 		data-opt="A"
 		data-text="{{Option1}}"
@@ -36,7 +50,6 @@
 		data-flag="{{Flag4}}"
 		data-reason="{{Rationale4}}"
 	></div>
-	<div id="diagram-check">{{ArchDiagram}}</div>
 </div>
 
 <script>
@@ -47,12 +60,13 @@
 			const wrapper = document.querySelector(".main-wrapper");
 			if (wrapper) {
 				const intercept = (e) => {
-					const isOption = e.target.closest(".option-block");
-					if (isOption) {
+					const isInteractive =
+						e.target.closest(".option-block") ||
+						e.target.closest(".fitb-input") ||
+						e.target.closest(".sa-scratchpad");
+					if (isInteractive) {
 						e.stopPropagation();
 					} else {
-						// For background taps, simulate continue button click for Desktop/AnkiDroid.
-						// We do NOT stop propagation so AnkiMobile natively grades the card.
 						if (!e.target.closest(".continue-btn")) {
 							const continueBtn =
 								document.querySelector(".continue-btn");
@@ -86,185 +100,466 @@
 			}
 		}
 
+		function normalizeBlank(str) {
+			if (!str) return "";
+			return String(str)
+				.trim()
+				.toLowerCase()
+				.replace(/^\$+|\$+$/g, "")
+				.trim();
+		}
+
+		function gradeCard(isCorrect) {
+			if (typeof pycmd !== "undefined") {
+				pycmd(isCorrect ? "ease3" : "ease1");
+			} else if (typeof buttonClick !== "undefined") {
+				buttonClick(isCorrect ? 3 : 1);
+			}
+		}
+
+		function renderContinueButton(isCorrect, label = null) {
+			const actionContainer = document.getElementById("action-container");
+			if (!actionContainer) return;
+
+			actionContainer.innerHTML = "";
+			const continueBtn = document.createElement("button");
+			continueBtn.className = `continue-btn ${isCorrect ? "btn-correct" : "btn-wrong"}`;
+			continueBtn.textContent =
+				label ||
+				(isCorrect
+					? "Continue (Mark Correct)"
+					: "Continue (Mark Incorrect)");
+
+			continueBtn.addEventListener("click", () => gradeCard(isCorrect));
+			actionContainer.appendChild(continueBtn);
+		}
+
 		try {
-			// Retrieve and clear selection state from sessionStorage
-			let selectedOpt = null;
-			let selectedCorrect = null;
+			const qRaw = document.getElementById("d-question").innerHTML;
+			const imgRaw = document.getElementById("d-image").innerHTML.trim();
+
+			document.getElementById("back-q-text").innerHTML = cleanMath(qRaw);
+
+			// Render inline image if present
+			const mediaBox = document.getElementById("back-q-media");
+			if (imgRaw && imgRaw.length > 0) {
+				mediaBox.innerHTML = imgRaw;
+				mediaBox.style.display = "block";
+			} else {
+				mediaBox.style.display = "none";
+			}
+
 			const qRawForId = document.getElementById("d-question").innerHTML;
 			const cardId = qRawForId
 				.substring(0, 50)
 				.replace(/[^a-zA-Z0-9]/g, "");
 
-			try {
-				selectedOpt = sessionStorage.getItem(
-					"notebooklm_sel_opt_" + cardId,
-				);
-				selectedCorrect = sessionStorage.getItem(
-					"notebooklm_sel_corr_" + cardId,
-				);
-				sessionStorage.removeItem("notebooklm_sel_opt_" + cardId);
-				sessionStorage.removeItem("notebooklm_sel_corr_" + cardId);
-			} catch (e) {
-				console.warn("sessionStorage read failed:", e);
-			}
-
-			// Layout Logic
-			const diagramCheck = document.getElementById("diagram-check");
-			const diagramContent = diagramCheck
-				? diagramCheck.innerHTML.trim()
-				: "";
-			const root = document.getElementById("layout-root");
-			const diagramCol = document.getElementById("diagram-container");
-
-			if (diagramContent.length > 0) {
-				root.classList.add("mode-split");
-			} else {
-				root.classList.add("mode-centered");
-			}
-
-			// Translate Question
-			const qRaw = document.getElementById("d-question").innerHTML;
-			document.getElementById("back-q-text").innerHTML = cleanMath(qRaw);
-
-			// Options Logic
-			const container = document.getElementById("back-options");
+			// Determine Question Type
+			const rawType = (
+				document.getElementById("d-qtype")?.textContent || ""
+			)
+				.trim()
+				.toUpperCase();
 			const dataItems = document.querySelectorAll(
 				"#back-data > div[data-opt]",
 			);
-			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
-			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-
 			const validItems = Array.from(dataItems).filter((item) => {
 				const rawText = item.dataset.text || "";
 				const rawReason = item.dataset.reason || "";
 				return rawText.trim() || rawReason.trim();
 			});
 
-			let shuffleOrder = [];
-			try {
-				const stored = sessionStorage.getItem(
-					"notebooklm_shuffle_" + cardId,
-				);
-				if (stored) {
-					shuffleOrder = JSON.parse(stored);
-				}
-			} catch (e) {}
-
-			let orderedItems = validItems;
-			if (shuffleOrder && shuffleOrder.length === validItems.length) {
-				const temp = [];
-				shuffleOrder.forEach((opt) => {
-					const found = validItems.find(
-						(item) => item.dataset.opt === opt,
-					);
-					if (found) temp.push(found);
-				});
-				if (temp.length === validItems.length) {
-					orderedItems = temp;
+			let questionType = rawType;
+			if (!questionType) {
+				const correctCount = validItems.filter((i) => {
+					const f = (i.dataset.flag || "").trim().toLowerCase();
+					return f === "true" || f === "yes" || f === "1";
+				}).length;
+				if (correctCount > 1) {
+					questionType = "MULTIPLE_SELECT";
+				} else if (validItems.length > 0) {
+					questionType = "MULTIPLE_CHOICE";
+				} else if (
+					document.getElementById("d-target")?.textContent.trim()
+				) {
+					questionType = "FILL_IN_THE_BLANK";
+				} else {
+					questionType = "SHORT_ANSWER";
 				}
 			}
 
-			orderedItems.forEach((item, index) => {
-				const originalLetter = item.dataset.opt;
-				const displayLetter = String.fromCharCode(65 + index); // A, B, C, D...
-				const rawText = item.dataset.text || "";
-				const rawReason = item.dataset.reason || "";
+			const interactiveArea = document.getElementById(
+				"back-interactive-area",
+			);
+			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
 
-				const text = cleanMath(rawText);
-				const reason = cleanMath(rawReason);
+			// --- MULTIPLE SELECT FEEDBACK ---
+			if (questionType === "MULTIPLE_SELECT") {
+				let selectedOpts = [];
+				try {
+					const stored = sessionStorage.getItem(
+						"notebooklm_ms_sel_" + cardId,
+					);
+					if (stored) selectedOpts = JSON.parse(stored);
+					sessionStorage.removeItem("notebooklm_ms_sel_" + cardId);
+				} catch (e) {}
 
-				const flagStr = (item.dataset.flag || "").trim().toLowerCase();
-				const isCorrect =
-					flagStr === "true" || flagStr === "yes" || flagStr === "1";
+				const totalCorrect = validItems.filter((i) => {
+					const f = (i.dataset.flag || "").trim().toLowerCase();
+					return f === "true" || f === "yes" || f === "1";
+				}).length;
 
-				const block = document.createElement("div");
-				block.className = "option-block";
+				const correctSelected = validItems.filter((i) => {
+					const f = (i.dataset.flag || "").trim().toLowerCase();
+					const isCorr = f === "true" || f === "yes" || f === "1";
+					return isCorr && selectedOpts.includes(i.dataset.opt);
+				}).length;
 
-				let feedbackHtml = "";
-				if (reason.trim()) {
+				const wrongSelected = validItems.filter((i) => {
+					const f = (i.dataset.flag || "").trim().toLowerCase();
+					const isCorr = f === "true" || f === "yes" || f === "1";
+					return !isCorr && selectedOpts.includes(i.dataset.opt);
+				}).length;
+
+				const isFullyCorrect =
+					correctSelected === totalCorrect && wrongSelected === 0;
+
+				interactiveArea.innerHTML = `
+					<div class="score-pill-container">
+						<div class="score-pill ${isFullyCorrect ? "pill-correct" : "pill-wrong"}">
+							${correctSelected}/${totalCorrect} Correct
+						</div>
+					</div>
+					<div class="options-list" id="back-options"></div>
+				`;
+
+				const container = document.getElementById("back-options");
+
+				// Retrieve shuffle order
+				let orderedItems = validItems;
+				try {
+					const storedOrder = sessionStorage.getItem(
+						"notebooklm_shuffle_" + cardId,
+					);
+					if (storedOrder) {
+						const shuffleKeys = JSON.parse(storedOrder);
+						const temp = [];
+						shuffleKeys.forEach((k) => {
+							const found = validItems.find(
+								(i) => i.dataset.opt === k,
+							);
+							if (found) temp.push(found);
+						});
+						if (temp.length === validItems.length)
+							orderedItems = temp;
+					}
+					sessionStorage.removeItem("notebooklm_shuffle_" + cardId);
+				} catch (e) {}
+
+				orderedItems.forEach((item, index) => {
+					const originalLetter = item.dataset.opt;
+					const displayLetter = String.fromCharCode(65 + index);
+					const text = cleanMath(item.dataset.text || "");
+					const reason = cleanMath(item.dataset.reason || "");
+					const flagStr = (item.dataset.flag || "")
+						.trim()
+						.toLowerCase();
+					const isCorrect =
+						flagStr === "true" ||
+						flagStr === "yes" ||
+						flagStr === "1";
+					const userSelected = selectedOpts.includes(originalLetter);
+
+					const block = document.createElement("div");
+					block.className = "option-block";
+
+					if (isCorrect) {
+						block.classList.add("state-correct");
+					} else if (userSelected) {
+						block.classList.add("state-wrong");
+					} else {
+						block.classList.add("state-dimmed");
+					}
+
+					const badgeHtml = userSelected
+						? '<span class="your-answer-badge">· Your answer</span>'
+						: "";
+
 					let headerHtml = "";
 					if (isCorrect) {
-						if (selectedOpt === originalLetter) {
-							headerHtml = `
-								<div class="thats-right">
-									${iconCheck} That's right!
-								</div>
-							`;
-						} else if (selectedCorrect === "true") {
-							headerHtml = `
-								<div class="thats-right">
-									${iconCheck} This is also right!
-								</div>
-							`;
-						} else {
-							headerHtml = `
-								<div class="thats-right">
-									${iconCheck} Right answer
-								</div>
-							`;
-						}
-					} else {
-						if (selectedOpt === originalLetter) {
-							headerHtml = `
-								<div class="not-quite">
-									${iconClose} Not quite
-								</div>
-							`;
-						}
+						headerHtml = `<div class="thats-right">${iconCheck} Correct option</div>`;
+					} else if (userSelected) {
+						headerHtml = `<div class="not-quite">${iconClose} Incorrect selection</div>`;
 					}
-					feedbackHtml = `
+
+					const feedbackHtml = reason.trim()
+						? `
 						<div class="feedback-section" style="display:block;">
 							${headerHtml}
 							<div class="rationale-text">${reason}</div>
 						</div>
-					`;
-				}
+					`
+						: "";
 
-				block.innerHTML = `
-					<div class="option-content">
-						<span class="option-letter">${displayLetter}.</span>
-						<span>${text}</span>
+					block.innerHTML = `
+						<div class="option-content">
+							<span class="option-letter">${displayLetter}.</span>
+							<span>${text}</span>
+							${badgeHtml}
+						</div>
+						${feedbackHtml}
+					`;
+
+					container.appendChild(block);
+				});
+
+				renderContinueButton(isFullyCorrect);
+			} else if (questionType === "FILL_IN_THE_BLANK") {
+				// --- FILL IN THE BLANK FEEDBACK ---
+				let typed = "";
+				try {
+					typed =
+						sessionStorage.getItem("notebooklm_typed_" + cardId) ||
+						"";
+					sessionStorage.removeItem("notebooklm_typed_" + cardId);
+				} catch (e) {}
+
+				const targetAnswer = (
+					document.getElementById("d-target")?.textContent || ""
+				).trim();
+				const acceptableStr = (
+					document.getElementById("d-acceptable")?.textContent || ""
+				).trim();
+				const generalRationale = (
+					document.getElementById("d-general-rationale")
+						?.textContent || ""
+				).trim();
+
+				const acceptedList = [targetAnswer, ...acceptableStr.split(",")]
+					.map(normalizeBlank)
+					.filter((s) => s.length > 0);
+
+				const normTyped = normalizeBlank(typed);
+				const isCorrect =
+					normTyped.length > 0 && acceptedList.includes(normTyped);
+
+				const feedbackCard = `
+					<div class="feedback-card ${isCorrect ? "card-correct" : "card-wrong"}">
+						<div class="feedback-header">
+							${isCorrect ? iconCheck : iconClose}
+							<span>${isCorrect ? "That's right!" : "Not quite"}</span>
+						</div>
+						<div class="answer-row">
+							<span class="answer-label">Your answer:</span>
+							<span class="answer-value">${typed || "<i>(No response entered)</i>"}</span>
+						</div>
+						${
+							!isCorrect
+								? `
+						<div class="answer-row">
+							<span class="answer-label">Accepted answer:</span>
+							<span class="answer-value">${cleanMath(targetAnswer)}</span>
+						</div>
+						`
+								: ""
+						}
 					</div>
-					${feedbackHtml}
 				`;
 
-				// Set visual states: Highlight correct & user chosen (wrong), dim the rest
-				if (isCorrect) {
-					block.classList.add("state-correct");
-				} else if (selectedOpt === originalLetter) {
-					block.classList.add("state-wrong");
-				} else {
-					block.classList.add("state-dimmed");
-				}
+				const rationaleCard = generalRationale
+					? `
+					<div class="general-rationale-box">
+						<div class="rationale-heading">Explanation</div>
+						<div>${cleanMath(generalRationale)}</div>
+					</div>
+				`
+					: "";
 
-				container.appendChild(block);
-			});
+				interactiveArea.innerHTML = feedbackCard + rationaleCard;
+				renderContinueButton(isCorrect);
+			} else if (questionType === "SHORT_ANSWER") {
+				// --- SHORT ANSWER FEEDBACK ---
+				let scratch = "";
+				try {
+					scratch =
+						sessionStorage.getItem(
+							"notebooklm_sa_scratch_" + cardId,
+						) || "";
+					sessionStorage.removeItem(
+						"notebooklm_sa_scratch_" + cardId,
+					);
+				} catch (e) {}
 
-			// Render Continue Action Button if option was selected
-			if (selectedCorrect !== null) {
+				const targetAnswer = (
+					document.getElementById("d-target")?.textContent || ""
+				).trim();
+				const rubric = (
+					document.getElementById("d-rubric")?.textContent || ""
+				).trim();
+				const generalRationale = (
+					document.getElementById("d-general-rationale")
+						?.textContent || ""
+				).trim();
+
+				const scratchHtml = scratch
+					? `
+					<div class="sa-user-scratch">
+						<div class="sa-section-title">Your Drafted Answer</div>
+						<div class="sa-scratch-text">${scratch}</div>
+					</div>
+				`
+					: "";
+
+				const modelAnswerHtml = targetAnswer
+					? `
+					<div class="sa-model-answer">
+						<div class="sa-section-title">Model Answer</div>
+						<div class="sa-model-text">${cleanMath(targetAnswer)}</div>
+					</div>
+				`
+					: "";
+
+				const rubricHtml = rubric
+					? `
+					<div class="sa-rubric">
+						<div class="sa-section-title">Grading Rubric & Key Points</div>
+						<div class="sa-rubric-content">${cleanMath(rubric).replace(/\n/g, "<br>")}</div>
+					</div>
+				`
+					: "";
+
+				const rationaleHtml = generalRationale
+					? `
+					<div class="general-rationale-box">
+						<div class="rationale-heading">Explanation</div>
+						<div>${cleanMath(generalRationale)}</div>
+					</div>
+				`
+					: "";
+
+				interactiveArea.innerHTML =
+					scratchHtml + modelAnswerHtml + rubricHtml + rationaleHtml;
+
+				// Self-Grade Action Buttons
 				const actionContainer =
 					document.getElementById("action-container");
 				if (actionContainer) {
-					const continueBtn = document.createElement("button");
-					continueBtn.className = `continue-btn ${selectedCorrect === "true" ? "btn-correct" : "btn-wrong"}`;
-					continueBtn.textContent =
-						selectedCorrect === "true"
-							? "Continue (Mark Correct)"
-							: "Continue (Mark Incorrect)";
-					/**
-					 * Event listener that grades the card based on the previous selection.
-					 */
-					continueBtn.addEventListener("click", (e) => {
-						// Do NOT stop propagation here. Allow AnkiMobile to natively grade the card if tapped.
-						if (typeof pycmd !== "undefined") {
-							pycmd(
-								selectedCorrect === "true" ? "ease3" : "ease1",
+					actionContainer.innerHTML = `
+						<div class="self-grade-container">
+							<div class="self-grade-title">How well did your response match the rubric?</div>
+							<div class="self-grade-buttons">
+								<button class="continue-btn btn-wrong" id="sa-btn-again">Again (Review Later)</button>
+								<button class="continue-btn btn-correct" id="sa-btn-good">Good (Understood)</button>
+							</div>
+						</div>
+					`;
+
+					document
+						.getElementById("sa-btn-again")
+						?.addEventListener("click", () => gradeCard(false));
+					document
+						.getElementById("sa-btn-good")
+						?.addEventListener("click", () => gradeCard(true));
+				}
+			} else {
+				// --- MULTIPLE CHOICE FEEDBACK ---
+				let selectedOpt = null;
+				let selectedCorrect = null;
+				try {
+					selectedOpt = sessionStorage.getItem(
+						"notebooklm_sel_opt_" + cardId,
+					);
+					selectedCorrect = sessionStorage.getItem(
+						"notebooklm_sel_corr_" + cardId,
+					);
+					sessionStorage.removeItem("notebooklm_sel_opt_" + cardId);
+					sessionStorage.removeItem("notebooklm_sel_corr_" + cardId);
+				} catch (e) {}
+
+				interactiveArea.innerHTML = `<div class="options-list" id="back-options"></div>`;
+				const container = document.getElementById("back-options");
+
+				let orderedItems = validItems;
+				try {
+					const storedOrder = sessionStorage.getItem(
+						"notebooklm_shuffle_" + cardId,
+					);
+					if (storedOrder) {
+						const shuffleKeys = JSON.parse(storedOrder);
+						const temp = [];
+						shuffleKeys.forEach((k) => {
+							const found = validItems.find(
+								(i) => i.dataset.opt === k,
 							);
-						} else if (typeof buttonClick !== "undefined") {
-							buttonClick(selectedCorrect === "true" ? 3 : 1);
+							if (found) temp.push(found);
+						});
+						if (temp.length === validItems.length)
+							orderedItems = temp;
+					}
+					sessionStorage.removeItem("notebooklm_shuffle_" + cardId);
+				} catch (e) {}
+
+				orderedItems.forEach((item, index) => {
+					const originalLetter = item.dataset.opt;
+					const displayLetter = String.fromCharCode(65 + index);
+					const text = cleanMath(item.dataset.text || "");
+					const reason = cleanMath(item.dataset.reason || "");
+					const flagStr = (item.dataset.flag || "")
+						.trim()
+						.toLowerCase();
+					const isCorrect =
+						flagStr === "true" ||
+						flagStr === "yes" ||
+						flagStr === "1";
+
+					const block = document.createElement("div");
+					block.className = "option-block";
+
+					let feedbackHtml = "";
+					if (reason.trim()) {
+						let headerHtml = "";
+						if (isCorrect) {
+							if (selectedOpt === originalLetter) {
+								headerHtml = `<div class="thats-right">${iconCheck} That's right!</div>`;
+							} else if (selectedCorrect === "true") {
+								headerHtml = `<div class="thats-right">${iconCheck} This is also right!</div>`;
+							} else {
+								headerHtml = `<div class="thats-right">${iconCheck} Right answer</div>`;
+							}
+						} else if (selectedOpt === originalLetter) {
+							headerHtml = `<div class="not-quite">${iconClose} Not quite</div>`;
 						}
-					});
-					actionContainer.appendChild(continueBtn);
+
+						feedbackHtml = `
+							<div class="feedback-section" style="display:block;">
+								${headerHtml}
+								<div class="rationale-text">${reason}</div>
+							</div>
+						`;
+					}
+
+					block.innerHTML = `
+						<div class="option-content">
+							<span class="option-letter">${displayLetter}.</span>
+							<span>${text}</span>
+						</div>
+						${feedbackHtml}
+					`;
+
+					if (isCorrect) {
+						block.classList.add("state-correct");
+					} else if (selectedOpt === originalLetter) {
+						block.classList.add("state-wrong");
+					} else {
+						block.classList.add("state-dimmed");
+					}
+
+					container.appendChild(block);
+				});
+
+				if (selectedCorrect !== null) {
+					renderContinueButton(selectedCorrect === "true");
 				}
 			}
 

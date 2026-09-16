@@ -8,8 +8,14 @@
 		<div class="quiz-content-wrapper">
 			<div class="question-text" id="q-text"></div>
 
-			<div class="options-list" id="front-options">
-				<div style="color: #666; padding: 20px">Loading...</div>
+			<!-- Inline Question Image / Diagram -->
+			<div class="question-media" id="q-media"></div>
+
+			<!-- Dynamic Question Interface Container -->
+			<div id="front-interactive-area">
+				<div class="options-list" id="front-options">
+					<div style="color: #666; padding: 20px">Loading...</div>
+				</div>
 			</div>
 
 			<div class="hint-container">
@@ -32,6 +38,12 @@
 <div id="raw-data" style="display: none">
 	<div id="d-question">{{Question}}</div>
 	<div id="d-hint">{{Hint}}</div>
+	<div id="d-image">{{Image}}{{ArchDiagram}}</div>
+	<div id="d-qtype">{{QuestionType}}</div>
+	<div id="d-target">{{TargetAnswer}}</div>
+	<div id="d-acceptable">{{AcceptableAnswers}}</div>
+	<div id="d-rubric">{{Rubric}}</div>
+	<div id="d-general-rationale">{{GeneralRationale}}</div>
 
 	<div
 		data-opt="A"
@@ -62,11 +74,16 @@
 <script>
 	(function () {
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
-		// EXCEPT when clicking on an option block or hint toggle.
+		// EXCEPT when interacting with inputs, buttons, options, or hint.
 		const interceptTap = (e) => {
-			const isOption = e.target && e.target.closest(".option-block");
-			const isHint = e.target && e.target.closest("#hint-toggle");
-			if (!isOption && !isHint) {
+			const isInteractive =
+				e.target &&
+				(e.target.closest(".option-block") ||
+					e.target.closest("#hint-toggle") ||
+					e.target.closest(".submit-btn") ||
+					e.target.closest(".fitb-input") ||
+					e.target.closest(".sa-scratchpad"));
+			if (!isInteractive) {
 				e.stopPropagation();
 				if (e.cancelable) e.preventDefault();
 			}
@@ -77,11 +94,8 @@
 		// --- 1. THE TRANSLATOR (Fixes $$ -> \[) ---
 		function cleanMath(str) {
 			if (!str) return "";
-			// Convert Block Math: $$ ... $$ -> \[ ... \]
 			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
-			// Convert Inline Math: $ ... $ -> \( ... \)
 			s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, "\\($1\\)");
-			// Convert Code: `...` -> <code>...</code>
 			s = s.replace(
 				/`([^`]+)`/g,
 				'<code class="latex-snippet">$1</code>',
@@ -98,13 +112,38 @@
 			}
 		}
 
+		// Flip card to back helper
+		function flipToBack() {
+			if (typeof pycmd !== "undefined") {
+				pycmd("ans");
+			} else if (typeof showAnswer !== "undefined") {
+				showAnswer();
+			} else {
+				const ev = document.createEvent("Event");
+				ev.initEvent("keypress", true, true);
+				ev.which = ev.keyCode = 13;
+				document.dispatchEvent(ev);
+			}
+		}
+
 		try {
-			// --- 3. PROCESS QUESTION & HINT ---
+			// --- 3. PROCESS QUESTION, MEDIA & HINT ---
 			const qRaw = document.getElementById("d-question").innerHTML;
 			const hRaw = document.getElementById("d-hint").innerHTML;
+			const imgRaw = document.getElementById("d-image").innerHTML.trim();
 
 			document.getElementById("q-text").innerHTML = cleanMath(qRaw);
 
+			// Render inline image if present
+			const mediaBox = document.getElementById("q-media");
+			if (imgRaw && imgRaw.length > 0) {
+				mediaBox.innerHTML = imgRaw;
+				mediaBox.style.display = "block";
+			} else {
+				mediaBox.style.display = "none";
+			}
+
+			// Render hint
 			const hBox = document.getElementById("hint-content");
 			if (hRaw.trim()) {
 				hBox.innerHTML = cleanMath(hRaw);
@@ -113,115 +152,245 @@
 				if (hBtn) hBtn.style.display = "none";
 			}
 
-			// --- 4. PROCESS OPTIONS ---
-			const container = document.getElementById("front-options");
-			const dataItems = document.querySelectorAll(
-				"#raw-data > div[data-opt]",
-			);
 			const qRawForId = document.getElementById("d-question").innerHTML;
 			const cardId = qRawForId
 				.substring(0, 50)
 				.replace(/[^a-zA-Z0-9]/g, "");
 
-			container.innerHTML = ""; // Clear loading
-
-			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
-			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-
+			// Determine Question Type
+			const rawType = (
+				document.getElementById("d-qtype")?.textContent || ""
+			)
+				.trim()
+				.toUpperCase();
+			const dataItems = document.querySelectorAll(
+				"#raw-data > div[data-opt]",
+			);
 			const validItems = Array.from(dataItems).filter((item) => {
 				const rawText = item.dataset.text || "";
 				const rawReason = item.dataset.reason || "";
 				return rawText.trim() || rawReason.trim();
 			});
 
-			// Shuffle options randomly
-			for (let i = validItems.length - 1; i > 0; i--) {
-				const j = Math.floor(Math.random() * (i + 1));
-				[validItems[i], validItems[j]] = [validItems[j], validItems[i]];
+			let questionType = rawType;
+			if (!questionType) {
+				const correctCount = validItems.filter((i) => {
+					const f = (i.dataset.flag || "").trim().toLowerCase();
+					return f === "true" || f === "yes" || f === "1";
+				}).length;
+				if (correctCount > 1) {
+					questionType = "MULTIPLE_SELECT";
+				} else if (validItems.length > 0) {
+					questionType = "MULTIPLE_CHOICE";
+				} else if (
+					document.getElementById("d-target")?.textContent.trim()
+				) {
+					questionType = "FILL_IN_THE_BLANK";
+				} else {
+					questionType = "SHORT_ANSWER";
+				}
 			}
 
-			try {
-				sessionStorage.setItem(
-					"notebooklm_shuffle_" + cardId,
-					JSON.stringify(validItems.map((i) => i.dataset.opt)),
-				);
-			} catch (e) {
-				console.warn("sessionStorage not available for shuffle:", e);
-			}
+			const interactiveArea = document.getElementById(
+				"front-interactive-area",
+			);
 
-			validItems.forEach((item, index) => {
-				const originalLetter = item.dataset.opt;
-				const displayLetter = String.fromCharCode(65 + index); // A, B, C, D...
-				const rawText = item.dataset.text || "";
-				const rawReason = item.dataset.reason || "";
+			// --- 4. RENDER ADAPTIVE INTERACTION BY QUESTION TYPE ---
+			if (questionType === "MULTIPLE_SELECT") {
+				// MULTIPLE SELECT: Checkboxes with "Check Answer" submit button
+				interactiveArea.innerHTML = `
+					<div class="options-list" id="front-options"></div>
+					<button class="submit-btn" id="ms-submit-btn">Check Answer</button>
+				`;
+				const container = document.getElementById("front-options");
 
-				// Apply Translator
-				const text = cleanMath(rawText);
-				const reason = cleanMath(rawReason);
+				// Shuffle options
+				for (let i = validItems.length - 1; i > 0; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					[validItems[i], validItems[j]] = [
+						validItems[j],
+						validItems[i],
+					];
+				}
 
-				const flagStr = (item.dataset.flag || "").trim().toLowerCase();
-				const isCorrect =
-					flagStr === "true" || flagStr === "yes" || flagStr === "1";
+				try {
+					sessionStorage.setItem(
+						"notebooklm_shuffle_" + cardId,
+						JSON.stringify(validItems.map((i) => i.dataset.opt)),
+					);
+				} catch (e) {}
 
-				const btn = document.createElement("div");
-				btn.className = "option-block";
+				const selectedOpts = new Set();
 
-				btn.innerHTML = `
-					<div class="option-content">
-						<span class="option-letter">${displayLetter}.</span>
-						<span>${text}</span>
-					</div>
-					<div class="feedback-section">
-						<div class="${isCorrect ? "thats-right" : "not-quite"}">
-							${isCorrect ? iconCheck : iconClose}
-							<span>${isCorrect ? "That's right!" : "Not quite"}</span>
+				validItems.forEach((item, index) => {
+					const originalLetter = item.dataset.opt;
+					const displayLetter = String.fromCharCode(65 + index);
+					const text = cleanMath(item.dataset.text || "");
+
+					const btn = document.createElement("div");
+					btn.className = "option-block ms-option";
+					btn.dataset.opt = originalLetter;
+
+					btn.innerHTML = `
+						<div class="option-content">
+							<span class="ms-checkbox"></span>
+							<span class="option-letter">${displayLetter}.</span>
+							<span>${text}</span>
 						</div>
-						<div class="rationale-text">${reason}</div>
+					`;
+
+					btn.addEventListener("click", (e) => {
+						e.stopPropagation();
+						if (selectedOpts.has(originalLetter)) {
+							selectedOpts.delete(originalLetter);
+							btn.classList.remove("is-selected");
+						} else {
+							selectedOpts.add(originalLetter);
+							btn.classList.add("is-selected");
+						}
+					});
+
+					container.appendChild(btn);
+				});
+
+				const submitBtn = document.getElementById("ms-submit-btn");
+				submitBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					try {
+						sessionStorage.setItem(
+							"notebooklm_ms_sel_" + cardId,
+							JSON.stringify(Array.from(selectedOpts)),
+						);
+					} catch (err) {}
+					flipToBack();
+				});
+			} else if (questionType === "FILL_IN_THE_BLANK") {
+				// FILL IN THE BLANK: Text input + Check Answer button
+				interactiveArea.innerHTML = `
+					<div class="fitb-container">
+						<input type="text" class="fitb-input" id="fitb-input" placeholder="Type your answer..." autocomplete="off" />
+						<button class="submit-btn" id="fitb-submit-btn">Check Answer</button>
 					</div>
 				`;
 
-				const saveState = () => {
+				const inputEl = document.getElementById("fitb-input");
+				const submitBtn = document.getElementById("fitb-submit-btn");
+
+				const doSubmit = (e) => {
+					if (e) e.stopPropagation();
+					const val = inputEl.value.trim();
 					try {
 						sessionStorage.setItem(
-							"notebooklm_sel_opt_" + cardId,
-							originalLetter,
+							"notebooklm_typed_" + cardId,
+							val,
 						);
-						sessionStorage.setItem(
-							"notebooklm_sel_corr_" + cardId,
-							isCorrect ? "true" : "false",
-						);
-					} catch (e) {
-						console.warn("sessionStorage not available:", e);
-					}
+					} catch (err) {}
+					flipToBack();
 				};
 
-				// Save on touchstart/mousedown to ensure state is saved before AnkiMobile natively flips
-				btn.addEventListener("touchstart", saveState, {
-					passive: true,
-				});
-				btn.addEventListener("mousedown", saveState, { passive: true });
-
-				btn.addEventListener("click", (e) => {
-					saveState();
-
-					// Flip to back (Desktop / AnkiDroid fallback)
-					if (typeof pycmd !== "undefined") {
-						pycmd("ans");
-					} else if (typeof showAnswer !== "undefined") {
-						showAnswer();
-					} else {
-						// Fallback: simulate Enter keypress
-						const ev = document.createEvent("Event");
-						ev.initEvent("keypress", true, true);
-						ev.which = ev.keyCode = 13;
-						document.dispatchEvent(ev);
+				submitBtn.addEventListener("click", doSubmit);
+				inputEl.addEventListener("keydown", (e) => {
+					if (e.key === "Enter") {
+						doSubmit(e);
 					}
 				});
+				// Auto-focus input on desktop
+				setTimeout(() => inputEl.focus(), 150);
+			} else if (questionType === "SHORT_ANSWER") {
+				// SHORT ANSWER: Optional scratchpad + Reveal button
+				interactiveArea.innerHTML = `
+					<div class="sa-container">
+						<textarea class="sa-scratchpad" id="sa-scratchpad" placeholder="Draft your answer here (optional)..." rows="4"></textarea>
+						<button class="submit-btn" id="sa-submit-btn">Show Model Answer & Rubric</button>
+					</div>
+				`;
 
-				container.appendChild(btn);
-			});
+				const scratchEl = document.getElementById("sa-scratchpad");
+				const submitBtn = document.getElementById("sa-submit-btn");
 
-			// HINT CLICK
+				submitBtn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					const val = scratchEl.value.trim();
+					try {
+						sessionStorage.setItem(
+							"notebooklm_sa_scratch_" + cardId,
+							val,
+						);
+					} catch (err) {}
+					flipToBack();
+				});
+			} else {
+				// MULTIPLE CHOICE: Standard single-choice options
+				interactiveArea.innerHTML = `<div class="options-list" id="front-options"></div>`;
+				const container = document.getElementById("front-options");
+
+				// Shuffle options randomly
+				for (let i = validItems.length - 1; i > 0; i--) {
+					const j = Math.floor(Math.random() * (i + 1));
+					[validItems[i], validItems[j]] = [
+						validItems[j],
+						validItems[i],
+					];
+				}
+
+				try {
+					sessionStorage.setItem(
+						"notebooklm_shuffle_" + cardId,
+						JSON.stringify(validItems.map((i) => i.dataset.opt)),
+					);
+				} catch (e) {}
+
+				validItems.forEach((item, index) => {
+					const originalLetter = item.dataset.opt;
+					const displayLetter = String.fromCharCode(65 + index);
+					const text = cleanMath(item.dataset.text || "");
+					const flagStr = (item.dataset.flag || "")
+						.trim()
+						.toLowerCase();
+					const isCorrect =
+						flagStr === "true" ||
+						flagStr === "yes" ||
+						flagStr === "1";
+
+					const btn = document.createElement("div");
+					btn.className = "option-block";
+
+					btn.innerHTML = `
+						<div class="option-content">
+							<span class="option-letter">${displayLetter}.</span>
+							<span>${text}</span>
+						</div>
+					`;
+
+					const saveState = () => {
+						try {
+							sessionStorage.setItem(
+								"notebooklm_sel_opt_" + cardId,
+								originalLetter,
+							);
+							sessionStorage.setItem(
+								"notebooklm_sel_corr_" + cardId,
+								isCorrect ? "true" : "false",
+							);
+						} catch (e) {}
+					};
+
+					btn.addEventListener("touchstart", saveState, {
+						passive: true,
+					});
+					btn.addEventListener("mousedown", saveState, {
+						passive: true,
+					});
+					btn.addEventListener("click", (e) => {
+						saveState();
+						flipToBack();
+					});
+
+					container.appendChild(btn);
+				});
+			}
+
+			// HINT TOGGLE
 			const hintBtn = document.getElementById("hint-toggle");
 			if (hintBtn) {
 				hintBtn.addEventListener("click", (e) => {
@@ -239,7 +408,7 @@
 				});
 			}
 
-			// FORCE RENDER
+			// FORCE RENDER MATH
 			setTimeout(() => triggerMath(document.body), 100);
 		} catch (e) {
 			console.log("Template Error:", e);
