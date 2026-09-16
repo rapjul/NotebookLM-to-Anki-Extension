@@ -88,12 +88,16 @@
 						);
 						const jsonString =
 							appRoot.getAttribute("data-app-data");
+						const rawImageUrls =
+							appRoot.getAttribute("data-image-urls");
 						const customTitle = event.data.notebookTitle;
 						console.log(
 							"[Anki Bridge] 📑 Raw JSON string retrieved length:",
 							jsonString ? jsonString.length : 0,
+							"Image URLs attribute:",
+							rawImageUrls ? "Found" : "None",
 						);
-						processBatch(jsonString, customTitle);
+						processBatch(jsonString, customTitle, rawImageUrls);
 					}
 				});
 				return true;
@@ -135,9 +139,14 @@
 	 * and posts the extracted data to the top window.
 	 * @param {string} jsonString - The raw, potentially HTML-escaped JSON data.
 	 * @param {string} customNotebookTitle - The notebook title to use for naming the deck.
+	 * @param {string|null} [rawImageUrls=null] - Optional raw data-image-urls attribute string.
 	 * @returns {void}
 	 */
-	function processBatch(jsonString, customNotebookTitle) {
+	function processBatch(
+		jsonString,
+		customNotebookTitle,
+		rawImageUrls = null,
+	) {
 		console.log(
 			"[Anki Bridge] 🔨 processBatch started. Custom notebook title:",
 			customNotebookTitle,
@@ -157,8 +166,8 @@
 				return;
 			}
 
-			const { quizData, title } =
-				NotebookLMToAnkiUtils.parseQuizJson(jsonString);
+			const { quizData, title, topicsCovered, imageUrls } =
+				NotebookLMToAnkiUtils.parseQuizJson(jsonString, rawImageUrls);
 			console.log(
 				"[Anki Bridge] 🔍 Found quiz data:",
 				quizData ? `Array length ${quizData.length}` : "Not Found",
@@ -175,13 +184,19 @@
 				finalTitle,
 			);
 
-			const cards = NotebookLMToAnkiUtils.mapQuizDataToCards(quizData);
+			const cards = NotebookLMToAnkiUtils.mapQuizDataToCards(
+				quizData,
+				imageUrls,
+			);
 			console.log(
 				"[Anki Bridge] 🗃️ Mapped cards count:",
 				cards.length,
 				"Example card:",
 				cards[0],
 			);
+
+			const sanitizedTopics =
+				NotebookLMToAnkiUtils.sanitizeTopicTags(topicsCovered);
 
 			console.log(
 				"[Anki Bridge] 📤 Posting ANKI_EXTRACTED_DATA to top window...",
@@ -196,6 +211,7 @@
 							customNotebookTitle,
 						),
 					quizTitle: NotebookLMToAnkiUtils.cleanQuizTitle(quizTitle),
+					topicsCovered: sanitizedTopics,
 				},
 				"*",
 			);
@@ -301,6 +317,7 @@
 					event.data.deckTitle,
 					event.data.nbTitle,
 					event.data.quizTitle,
+					event.data.topicsCovered,
 				);
 			}
 		});
@@ -340,9 +357,16 @@
 	 * @param {string} deckTitle - The proposed name of the deck (legacy fallback).
 	 * @param {string} nbTitle - The notebook title.
 	 * @param {string} quizTitle - The quiz artifact title.
+	 * @param {Array<string>} [topicsCovered=[]] - Sanitized topic tags to attach to Anki notes.
 	 * @returns {void}
 	 */
-	function handleExtractedData(cards, deckTitle, nbTitle, quizTitle) {
+	function handleExtractedData(
+		cards,
+		deckTitle,
+		nbTitle,
+		quizTitle,
+		topicsCovered = [],
+	) {
 		const domQuizTitle = getQuizTitle();
 		console.log(
 			"[Anki Bridge] 🏷️ getQuizTitle() from top window DOM:",
@@ -422,6 +446,7 @@
 								cards,
 								resolvedDeckTitle,
 								userAction,
+								topicsCovered,
 							);
 						},
 					);
@@ -430,7 +455,12 @@
 						"[Anki Bridge] 🆕 Deck does not exist. Proceeding with export.",
 					);
 					// Default if not exists
-					sendBatchToAnkiBackground(cards, finalDeckTitle, "merge");
+					sendBatchToAnkiBackground(
+						cards,
+						finalDeckTitle,
+						"merge",
+						topicsCovered,
+					);
 				}
 			},
 		);
@@ -442,15 +472,22 @@
 	 * @param {Object[]} cards - Array of card objects.
 	 * @param {string} deckTitle - The title of the deck.
 	 * @param {string} duplicateAction - Resolution strategy ("merge", "increment", "overwrite").
+	 * @param {Array<string>} [topicsCovered=[]] - Array of sanitized topic tags.
 	 * @returns {void}
 	 */
-	function sendBatchToAnkiBackground(cards, deckTitle, duplicateAction) {
+	function sendBatchToAnkiBackground(
+		cards,
+		deckTitle,
+		duplicateAction,
+		topicsCovered = [],
+	) {
 		chrome.runtime.sendMessage(
 			{
 				action: "sendBatchToAnki",
 				batchData: cards,
 				deckTitle: deckTitle,
 				duplicateAction: duplicateAction,
+				topicsCovered: topicsCovered,
 			},
 			(res) => {
 				if (res?.success) {

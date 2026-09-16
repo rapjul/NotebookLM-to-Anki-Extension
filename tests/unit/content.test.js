@@ -29,6 +29,15 @@ const standardQuizJson = fs.readFileSync(
 );
 
 /**
+ * Multi-format quiz JSON fixture content.
+ * @type {string}
+ */
+const multiFormatQuizJson = fs.readFileSync(
+	path.join(FIXTURES_DIR, "multi-format-quiz.json"),
+	"utf8",
+);
+
+/**
  * Unrefs timers so tests exit immediately without blocking on 4s UI timeouts.
  */
 const origSetTimeout = globalThis.setTimeout;
@@ -223,6 +232,10 @@ test("content: data miner detection and batch extraction", async (t) => {
 						assert.ok(
 							event.data.deckTitle.includes("Organic Chemistry"),
 						);
+						assert.ok(
+							Array.isArray(event.data.topicsCovered),
+							"topicsCovered should be an array",
+						);
 						resolve();
 					}
 				};
@@ -232,6 +245,71 @@ test("content: data miner detection and batch extraction", async (t) => {
 					action: "ANKI_TRIGGER_EXTRACT",
 					notebookTitle: "Organic Chemistry",
 				});
+			});
+		},
+	);
+
+	await t.test(
+		"ANKI_TRIGGER_EXTRACT resolves data-image-urls and covered topics for multi-format quiz",
+		async () => {
+			mockDOM.window.postMessage({
+				action: "ANKI_REAL_SUCCESS",
+				count: 0,
+			});
+			appRoot.setAttribute("data-app-data", multiFormatQuizJson);
+			appRoot.setAttribute(
+				"data-image-urls",
+				JSON.stringify([
+					"https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+				]),
+			);
+
+			await new Promise((resolve, reject) => {
+				/**
+				 * Listener for messages posted back to window.
+				 * @param {object} event - Message event.
+				 * @returns {void}
+				 */
+				const messageHandler = (event) => {
+					if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+						mockDOM.window.removeEventListener(
+							"message",
+							messageHandler,
+						);
+						try {
+							assert.equal(event.data.cards.length, 5);
+							const imageCard = event.data.cards[4];
+							assert.ok(
+								imageCard.diagramUrl.includes(
+									"https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+								),
+								"Image card should resolve image URL from data-image-urls",
+							);
+							assert.ok(
+								event.data.topicsCovered.includes(
+									"Fundamental_Circuit_Definitions_Voltage_Current_Power",
+								),
+								"Should include sanitized topic tag",
+							);
+							resolve();
+						} catch (err) {
+							reject(err);
+						}
+					}
+				};
+
+				mockDOM.window.addEventListener("message", messageHandler);
+				mockDOM.window.postMessage({
+					action: "ANKI_TRIGGER_EXTRACT",
+					notebookTitle: "Circuit Analysis",
+				});
+			});
+
+			appRoot.removeAttribute("data-image-urls");
+			appRoot.setAttribute("data-app-data", standardQuizJson);
+			mockDOM.window.postMessage({
+				action: "ANKI_REAL_SUCCESS",
+				count: 0,
 			});
 		},
 	);
@@ -350,6 +428,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				deckTitle: "NotebookLM::Chemistry::Quizzes::Acids",
 				nbTitle: "Chemistry",
 				quizTitle: "Acids",
+				topicsCovered: ["Acids_Bases", "Equilibrium"],
 			});
 
 			assert.ok(
@@ -383,6 +462,10 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 			);
 			assert.ok(sendMsg);
 			assert.equal(sendMsg.duplicateAction, "merge");
+			assert.deepEqual(sendMsg.topicsCovered, [
+				"Acids_Bases",
+				"Equilibrium",
+			]);
 		},
 	);
 
@@ -500,6 +583,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				deckTitle: "NotebookLM::Chemistry::Quizzes::BrandNewDeck",
 				nbTitle: "Chemistry",
 				quizTitle: "BrandNewDeck",
+				topicsCovered: ["General_Chemistry"],
 			});
 
 			const sendMsg = sentMessages.find(
@@ -507,6 +591,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 			);
 			assert.ok(sendMsg);
 			assert.equal(sendMsg.duplicateAction, "merge");
+			assert.deepEqual(sendMsg.topicsCovered, ["General_Chemistry"]);
 			assert.equal(overlay.classList.contains("show"), false);
 		},
 	);
