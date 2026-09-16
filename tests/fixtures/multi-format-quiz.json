@@ -1,0 +1,128 @@
+{
+  "title": "Quiz | Circuit Analysis Fundamentals",
+  "imageUrls": [
+    "https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+    "https://lh3.googleusercontent.com/test-diagram-current-node.png"
+  ],
+  "quiz": [
+    {
+      "type": "multiple_choice",
+      "question": "In the context of electrical circuits, how is the element voltage $v$ fundamentally defined?",
+      "answerOptions": [
+        {
+          "text": "The energy gain or loss per unit charge ($dw/dq$) between two terminals.",
+          "isCorrect": true,
+          "rationale": "Voltage represents the potential energy difference per Coulomb of charge."
+        },
+        {
+          "text": "The total amount of charge stored within the element over time.",
+          "isCorrect": false,
+          "rationale": "This describes total charge, not voltage."
+        },
+        {
+          "text": "The rate at which charge flows through a cross-section of the wire.",
+          "isCorrect": false,
+          "rationale": "This is electrical current, not voltage."
+        },
+        {
+          "text": "The product of the resistance and the square of the current.",
+          "isCorrect": false,
+          "rationale": "This describes dissipated power ($P = I^2R$)."
+        }
+      ],
+      "hint": "Consider the relationship between electrical work and charge."
+    },
+    {
+      "type": "multiple_select",
+      "question": "According to the Standard Reference Syntax (SRS) for a resistor, which of the following must be true for the equation $V = RI$ to hold without a negative sign?",
+      "answerOptions": [
+        {
+          "text": "The current $I$ must enter the terminal marked with the positive ($+$) polarity.",
+          "isCorrect": true,
+          "rationale": "SRS assumes current flows in the direction of the voltage drop."
+        },
+        {
+          "text": "The voltage $V$ must represent a voltage drop in the direction of the current.",
+          "isCorrect": true,
+          "rationale": "Defining $V$ as a drop ensures power $P=VI$ is calculated as a positive absorbed value."
+        },
+        {
+          "text": "The resistance $R$ must be a negative value.",
+          "isCorrect": false,
+          "rationale": "Physical resistors have positive resistance."
+        },
+        {
+          "text": "The current must flow from the negative ($-$) terminal to the positive ($+$) terminal.",
+          "isCorrect": false,
+          "rationale": "Flowing from $-$ to $+$ would require the equation $V = -RI$."
+        }
+      ],
+      "hint": "SRS links charge flow direction to assigned voltage polarity."
+    },
+    {
+      "type": "fill_in_the_blank",
+      "question": "The SI unit for electrical current, which represents the flow of one Coulomb of charge per second, is the ___.",
+      "bestAnswer": "Ampere",
+      "acceptableAnswers": ["Amp", "Amperes", "A"],
+      "rationale": "The Ampere is defined as one Coulomb per second ($1 A = 1 C/s$).",
+      "hint": "This unit is named after a French physicist and abbreviated as 'A'."
+    },
+    {
+      "type": "short_answer",
+      "question": "Explain the difference between a 'voltage rise' and a 'voltage drop' when traversing a circuit element during KVL analysis.",
+      "grading": {
+        "modelAnswer": "A voltage rise occurs when traversing an element from the negative ($-$) terminal to the positive ($+$) terminal. Conversely, a voltage drop occurs when moving from the positive ($+$) to the negative ($-$) terminal.",
+        "rationale": "These terms describe the change in electrical potential relative to loop traversal.",
+        "requiredAttributes": [
+          "Defines voltage rise as moving from $-$ to $+$.",
+          "Defines voltage drop as moving from $+$ to $-$.",
+          "Associates terms with direction of loop traversal."
+        ],
+        "errors": {
+          "misconceptions": [
+            "Stating that current direction determines rise or drop."
+          ],
+          "bluffs": ["Vague statements without specifying terminal polarities."]
+        }
+      },
+      "hint": "Focus on the terminal signs encountered along traversal."
+    },
+    {
+      "type": "multiple_choice",
+      "question": "Based on the provided source images, what type of component does this symbol represent?\n\n![A diamond-shaped symbol with a plus and minus sign inside](image_reference_index:0 \"Analog Signals and Systems\")",
+      "imageUrls": [
+        "![A diamond-shaped symbol with a plus and minus sign inside](image_reference_index:0 \"Analog Signals and Systems\")"
+      ],
+      "answerOptions": [
+        {
+          "text": "Dependent voltage source",
+          "isCorrect": true,
+          "rationale": "The diamond shape signifies a dependent source with polarity marking voltage."
+        },
+        {
+          "text": "Independent voltage source",
+          "isCorrect": false,
+          "rationale": "Independent sources are represented by circles."
+        },
+        {
+          "text": "Dependent current source",
+          "isCorrect": false,
+          "rationale": "Current sources have arrows inside."
+        },
+        {
+          "text": "Ideal resistor",
+          "isCorrect": false,
+          "rationale": "Resistors are represented by a zig-zag line."
+        }
+      ],
+      "hint": "Note the shape and internal markings."
+    }
+  ],
+  "topics": {
+    "covered": [
+      "Fundamental Circuit Definitions (Voltage, Current, Power)",
+      "Kirchhoff's Voltage Law (KVL) and Conservation of Energy",
+      "Standard Reference Syntax (SRS) and Ohm's Law"
+    ]
+  }
+}

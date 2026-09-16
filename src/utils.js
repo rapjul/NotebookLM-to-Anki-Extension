@@ -122,13 +122,119 @@
 	}
 
 	/**
-	 * Parses and validates raw NotebookLM JSON string extracted from the DOM.
+	 * Extracts inline markdown image references (e.g. `![alt](image_reference_index:0 "caption")`)
+	 * from question text, cleans the prompt, and resolves the image URL from the provided array.
+	 *
+	 * @param {string|null|undefined} questionText - Raw question text possibly containing markdown image tags.
+	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
+	 * @returns {{ cleanQuestion: string, mediaUrl: string, alt: string, caption: string }} Extracted media metadata and sanitized prompt.
+	 */
+	function extractQuestionMedia(questionText, imageUrls = []) {
+		if (!questionText) {
+			return { cleanQuestion: "", mediaUrl: "", alt: "", caption: "" };
+		}
+
+		const indexedRegex =
+			/!\[(.*?)\]\(image_reference_index:(\d+)(?:\s*"(.*?)")?\)/;
+		const indexedMatch = questionText.match(indexedRegex);
+
+		if (indexedMatch) {
+			const alt = (indexedMatch[1] || "").trim();
+			const index = parseInt(indexedMatch[2], 10);
+			const caption = (indexedMatch[3] || "").trim();
+			const mediaUrl =
+				Array.isArray(imageUrls) && imageUrls[index]
+					? imageUrls[index]
+					: "";
+			const cleanQuestion = questionText
+				.replace(indexedMatch[0], "")
+				.trim();
+
+			return {
+				cleanQuestion,
+				mediaUrl,
+				alt,
+				caption,
+			};
+		}
+
+		const directUrlRegex =
+			/!\[(.*?)\]\(((?:https?:\/\/|\/)[^\s)]+)(?:\s*"(.*?)")?\)/;
+		const directMatch = questionText.match(directUrlRegex);
+
+		if (directMatch) {
+			const alt = (directMatch[1] || "").trim();
+			const mediaUrl = (directMatch[2] || "").trim();
+			const caption = (directMatch[3] || "").trim();
+			const cleanQuestion = questionText
+				.replace(directMatch[0], "")
+				.trim();
+
+			return {
+				cleanQuestion,
+				mediaUrl,
+				alt,
+				caption,
+			};
+		}
+
+		return {
+			cleanQuestion: questionText.trim(),
+			mediaUrl: "",
+			alt: "",
+			caption: "",
+		};
+	}
+
+	/**
+	 * Sanitizes topic strings from Google Notebook into valid, compliant Anki tags.
+	 * Replaces spaces with underscores and removes invalid tag characters.
+	 *
+	 * @param {Array<string>|null|undefined} topics - Array of raw topic names.
+	 * @returns {Array<string>} Array of sanitized Anki tag strings.
+	 */
+	function sanitizeTopicTags(topics) {
+		if (!Array.isArray(topics)) return [];
+
+		return topics
+			.map((t) => {
+				if (!t || typeof t !== "string") return "";
+				return t
+					.trim()
+					.replace(/\s+/g, "_")
+					.replace(/[^\w-]/g, "")
+					.replace(/_+/g, "_")
+					.replace(/^_|_$/g, "");
+			})
+			.filter((t) => t.length > 0);
+	}
+
+	/**
+	 * Normalizes a fill-in-the-blank user response or accepted answer string
+	 * by trimming whitespace, converting to lowercase, and stripping optional math delimiters.
+	 *
+	 * @param {string|null|undefined} text - Raw answer text.
+	 * @returns {string} Normalized string suitable for direct comparison.
+	 */
+	function normalizeBlankAnswer(text) {
+		if (!text) return "";
+		return String(text)
+			.trim()
+			.toLowerCase()
+			.replace(/^\$+|\$+$/g, "")
+			.trim();
+	}
+
+	/**
+	 * Parses and validates raw NotebookLM JSON string extracted from the DOM,
+	 * optionally incorporating image URLs and covered topic metadata.
 	 *
 	 * @param {string} jsonString - The raw, potentially HTML-escaped JSON data.
-	 * @returns {{ quizData: Array<object>, title: string|undefined }} The extracted quiz items and title.
+	 * @param {string|Array<string>|null|undefined} [imageUrlsPayload=null] - Image URLs attribute or array.
+	 * @returns {{ quizData: Array<object>, title: string|undefined, topicsCovered: Array<string>, imageUrls: Array<string> }} Extracted quiz items, metadata, and assets.
 	 * @throws {Error} When the payload is invalid, empty, or contains no quiz questions.
 	 */
-	function parseQuizJson(jsonString) {
+	function parseQuizJson(jsonString, imageUrlsPayload = null) {
 		if (!jsonString) {
 			throw new Error("Raw JSON string is empty.");
 		}
@@ -147,66 +253,162 @@
 			throw new Error("0 Questions Found.");
 		}
 
+		let imageUrls = [];
+		if (Array.isArray(imageUrlsPayload)) {
+			imageUrls = imageUrlsPayload;
+		} else if (
+			typeof imageUrlsPayload === "string" &&
+			imageUrlsPayload.trim()
+		) {
+			try {
+				const parsed = JSON.parse(imageUrlsPayload);
+				if (Array.isArray(parsed)) imageUrls = parsed;
+			} catch {
+				const clean = unescapeHtml(imageUrlsPayload);
+				try {
+					const parsed = JSON.parse(clean);
+					if (Array.isArray(parsed)) imageUrls = parsed;
+				} catch {}
+			}
+		}
+
+		if (imageUrls.length === 0 && Array.isArray(data.imageUrls)) {
+			imageUrls = data.imageUrls;
+		}
+
+		const rawTopics =
+			data.topics?.covered || data.mostRecentQuery?.topics?.covered || [];
+
 		return {
 			quizData,
 			title: data.title,
+			topicsCovered: Array.isArray(rawTopics) ? rawTopics : [],
+			imageUrls,
 		};
 	}
 
 	/**
-	 * Maps raw quiz question objects to normalized 4-option flashcard objects.
-	 * Preserves LaTeX formulas, option rationales, and correctness flags.
+	 * Maps raw quiz question objects to normalized flashcard objects across all four
+	 * supported question types (multiple_choice, multiple_select, fill_in_the_blank, short_answer).
+	 * Preserves LaTeX formulas, option rationales, correctness flags, and media references.
 	 *
 	 * @param {Array<object>} quizData - Array of question objects from NotebookLM.
+	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
 	 * @returns {Array<object>} Normalized card objects.
 	 */
-	function mapQuizDataToCards(quizData) {
+	function mapQuizDataToCards(quizData, imageUrls = []) {
 		if (!Array.isArray(quizData)) return [];
 
 		return quizData.map((q) => {
-			const options = q.answerOptions || [];
-			return {
-				question: q.question || "",
-				hint: q.hint || "",
+			const media = extractQuestionMedia(q.question || "", imageUrls);
+			const rawType = (q.type || "").toLowerCase();
 
-				// Option 1
+			let questionType = "MULTIPLE_CHOICE";
+			if (
+				rawType === "multiple_select" ||
+				(!rawType &&
+					q.answerOptions?.filter((o) => o.isCorrect).length > 1)
+			) {
+				questionType = "MULTIPLE_SELECT";
+			} else if (
+				rawType === "fill_in_the_blank" ||
+				(!rawType && q.bestAnswer !== undefined)
+			) {
+				questionType = "FILL_IN_THE_BLANK";
+			} else if (
+				rawType === "short_answer" ||
+				(!rawType && q.grading !== undefined)
+			) {
+				questionType = "SHORT_ANSWER";
+			}
+
+			const options = q.answerOptions || [];
+
+			let rubricText = "";
+			if (
+				q.grading?.requiredAttributes &&
+				Array.isArray(q.grading.requiredAttributes)
+			) {
+				rubricText = q.grading.requiredAttributes
+					.map((attr) => `• ${attr}`)
+					.join("\n");
+			}
+			if (
+				q.grading?.errors?.misconceptions &&
+				Array.isArray(q.grading.errors.misconceptions) &&
+				q.grading.errors.misconceptions.length > 0
+			) {
+				const misc = q.grading.errors.misconceptions
+					.map((m) => `⚠️ ${m}`)
+					.join("\n");
+				rubricText = rubricText ? `${rubricText}\n\n${misc}` : misc;
+			}
+
+			const acceptableList = Array.isArray(q.acceptableAnswers)
+				? q.acceptableAnswers.join(", ")
+				: q.acceptableAnswers || "";
+
+			return {
+				question: media.cleanQuestion,
+				hint: q.hint || "",
+				questionType,
+
+				// Media references
+				diagramUrl: media.mediaUrl || "",
+				diagramAlt: media.alt || "",
+				diagramCaption: media.caption || "",
+				image: "",
+
+				// Multi-choice & Multi-select Options
 				option1: options[0]?.text || "",
 				flag1: options[0]?.isCorrect ? "True" : "False",
 				rationale1: options[0]?.rationale || "",
 
-				// Option 2
 				option2: options[1]?.text || "",
 				flag2: options[1]?.isCorrect ? "True" : "False",
 				rationale2: options[1]?.rationale || "",
 
-				// Option 3
 				option3: options[2]?.text || "",
 				flag3: options[2]?.isCorrect ? "True" : "False",
 				rationale3: options[2]?.rationale || "",
 
-				// Option 4
 				option4: options[3]?.text || "",
 				flag4: options[3]?.isCorrect ? "True" : "False",
 				rationale4: options[3]?.rationale || "",
+
+				// Fill in the Blank & Short Answer target data
+				targetAnswer: q.bestAnswer || q.grading?.modelAnswer || "",
+				acceptableAnswers: acceptableList,
+				rubric: rubricText,
+				generalRationale: q.rationale || q.grading?.rationale || "",
 			};
 		});
 	}
 
 	/**
 	 * Maps normalized flashcard objects into AnkiConnect note payload objects
-	 * adhering to the 15-field NotebookLM Quiz model specification.
+	 * adhering to the enhanced NotebookLM Quiz model specification with 'Image' and adaptive fields.
 	 *
 	 * @param {Array<object>} cards - Array of normalized card objects.
 	 * @param {string} targetDeck - Name of the target Anki deck.
 	 * @param {string} [noteType="NotebookLM Quiz"] - Anki note type model name.
+	 * @param {Array<string>} [topicTags=[]] - Optional array of sanitized topic tag strings.
 	 * @returns {Array<object>} Array of AnkiConnect note structures.
 	 */
 	function mapCardsToAnkiNotes(
 		cards,
 		targetDeck,
 		noteType = "NotebookLM Quiz",
+		topicTags = [],
 	) {
 		if (!Array.isArray(cards)) return [];
+
+		const allTags = ["notebooklm_export", "google_notebook_export"];
+		if (Array.isArray(topicTags)) {
+			topicTags.forEach((t) => {
+				if (t && !allTags.includes(t)) allTags.push(t);
+			});
+		}
 
 		return cards.map((card) => {
 			return {
@@ -216,7 +418,7 @@
 					// Header fields
 					Question: card.question || "",
 					Hint: card.hint || "",
-					ArchDiagram: "",
+					Image: card.image || "",
 
 					// Option 1 (Rationale first)
 					Option1: card.option1 || "",
@@ -237,11 +439,18 @@
 					Option4: card.option4 || "",
 					Flag4: card.flag4 || "False",
 					Rationale4: card.rationale4 || "",
+
+					// Adaptive multi-format fields
+					QuestionType: card.questionType || "MULTIPLE_CHOICE",
+					TargetAnswer: card.targetAnswer || "",
+					AcceptableAnswers: card.acceptableAnswers || "",
+					Rubric: card.rubric || "",
+					GeneralRationale: card.generalRationale || "",
 				},
 				options: {
 					allowDuplicate: true,
 				},
-				tags: ["notebooklm_export"],
+				tags: allTags,
 			};
 		});
 	}
@@ -291,6 +500,9 @@
 		cleanQuizTitle,
 		formatDeckTitle,
 		formatErrorMessage,
+		extractQuestionMedia,
+		sanitizeTopicTags,
+		normalizeBlankAnswer,
 		parseQuizJson,
 		mapQuizDataToCards,
 		mapCardsToAnkiNotes,

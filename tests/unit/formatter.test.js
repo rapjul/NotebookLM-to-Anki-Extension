@@ -8,6 +8,9 @@ import {
 	cleanQuizTitle,
 	formatDeckTitle,
 	formatErrorMessage,
+	sanitizeTopicTags,
+	normalizeBlankAnswer,
+	extractQuestionMedia,
 } from "../helpers/utils.js";
 
 test("formatter: unescapeHtml", async (t) => {
@@ -174,4 +177,118 @@ test("formatter: formatErrorMessage", async (t) => {
 		assert.equal(formatErrorMessage(null), "Unknown Error");
 		assert.equal(formatErrorMessage(undefined), "Unknown Error");
 	});
+});
+
+test("formatter: sanitizeTopicTags", async (t) => {
+	await t.test(
+		"converts spaces to underscores and strips special characters",
+		() => {
+			const rawTopics = [
+				"Fundamental Circuit Definitions (Voltage, Current, Power)",
+				"Kirchhoff's Voltage Law (KVL) and Conservation of Energy",
+				"Standard Reference Syntax (SRS) & Ohm's Law!",
+			];
+			const sanitized = sanitizeTopicTags(rawTopics);
+			assert.deepEqual(sanitized, [
+				"Fundamental_Circuit_Definitions_Voltage_Current_Power",
+				"Kirchhoffs_Voltage_Law_KVL_and_Conservation_of_Energy",
+				"Standard_Reference_Syntax_SRS_Ohms_Law",
+			]);
+		},
+	);
+
+	await t.test(
+		"handles hyphens, multiple spaces, and underscores cleanly",
+		() => {
+			const raw = ["  Electro-Magnetic   Fields__  ", "Quantum--Physics"];
+			const sanitized = sanitizeTopicTags(raw);
+			assert.deepEqual(sanitized, [
+				"Electro-Magnetic_Fields",
+				"Quantum--Physics",
+			]);
+		},
+	);
+
+	await t.test(
+		"handles empty array, null, undefined, or non-string items",
+		() => {
+			assert.deepEqual(sanitizeTopicTags([]), []);
+			assert.deepEqual(sanitizeTopicTags(null), []);
+			assert.deepEqual(sanitizeTopicTags(undefined), []);
+			assert.deepEqual(
+				sanitizeTopicTags(["", "   ", "???", null, 123]),
+				[],
+			);
+		},
+	);
+});
+
+test("formatter: normalizeBlankAnswer", async (t) => {
+	await t.test("trims and converts to lowercase", () => {
+		assert.equal(normalizeBlankAnswer("  Ampere  "), "ampere");
+		assert.equal(normalizeBlankAnswer("Coulomb/Second"), "coulomb/second");
+	});
+
+	await t.test("strips surrounding LaTeX math dollar delimiters", () => {
+		assert.equal(normalizeBlankAnswer("$Ampere$"), "ampere");
+		assert.equal(
+			normalizeBlankAnswer("$$100\\,\\text{V}$$"),
+			"100\\,\\text{v}",
+		);
+	});
+
+	await t.test("handles empty and nullish inputs gracefully", () => {
+		assert.equal(normalizeBlankAnswer(""), "");
+		assert.equal(normalizeBlankAnswer(null), "");
+		assert.equal(normalizeBlankAnswer(undefined), "");
+	});
+});
+
+test("formatter: extractQuestionMedia", async (t) => {
+	await t.test(
+		"resolves indexed image reference with imageUrls array",
+		() => {
+			const question =
+				'Identify the circuit element:\n\n![Source Symbol](image_reference_index:1 "Voltage Reference")';
+			const imageUrls = [
+				"https://example.com/resistor.png",
+				"https://example.com/voltage-source.png",
+			];
+			const result = extractQuestionMedia(question, imageUrls);
+
+			assert.equal(result.cleanQuestion, "Identify the circuit element:");
+			assert.equal(
+				result.mediaUrl,
+				"https://example.com/voltage-source.png",
+			);
+			assert.equal(result.alt, "Source Symbol");
+			assert.equal(result.caption, "Voltage Reference");
+		},
+	);
+
+	await t.test("extracts direct http(s) URL in markdown image syntax", () => {
+		const question =
+			'Diagram:\n![Circuit diagram](https://example.com/schematic.png "Schematic diagram")\nWhat is the value?';
+		const result = extractQuestionMedia(question, []);
+
+		assert.equal(result.cleanQuestion, "Diagram:\n\nWhat is the value?");
+		assert.equal(result.mediaUrl, "https://example.com/schematic.png");
+		assert.equal(result.alt, "Circuit diagram");
+		assert.equal(result.caption, "Schematic diagram");
+	});
+
+	await t.test(
+		"returns clean question when no media markup is present",
+		() => {
+			const question = "What is the speed of light in a vacuum?";
+			const result = extractQuestionMedia(question, [
+				"https://example.com/unused.png",
+			]);
+
+			assert.equal(result.cleanQuestion, question);
+			assert.equal(result.mediaUrl, "");
+			assert.equal(result.alt, "");
+			assert.equal(result.caption, "");
+		},
+	);
 });

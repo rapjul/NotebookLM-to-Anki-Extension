@@ -71,6 +71,29 @@ test("transformer: parseQuizJson", async (t) => {
 		},
 	);
 
+	await t.test(
+		"extracts topicsCovered and imageUrls from multi-format quiz payload",
+		() => {
+			const multiData = loadFixture("multi-format-quiz.json");
+			const jsonString = JSON.stringify(multiData);
+			const { quizData, title, topicsCovered, imageUrls } =
+				parseQuizJson(jsonString);
+
+			assert.equal(title, "Quiz | Circuit Analysis Fundamentals");
+			assert.equal(quizData.length, 5);
+			assert.equal(topicsCovered.length, 3);
+			assert.equal(
+				topicsCovered[0],
+				"Fundamental Circuit Definitions (Voltage, Current, Power)",
+			);
+			assert.equal(imageUrls.length, 2);
+			assert.equal(
+				imageUrls[0],
+				"https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+			);
+		},
+	);
+
 	await t.test("throws error when jsonString is empty or null", () => {
 		assert.throws(() => parseQuizJson(""), {
 			message: "Raw JSON string is empty.",
@@ -124,6 +147,71 @@ test("transformer: mapQuizDataToCards", async (t) => {
 
 			assert.equal(firstCard.flag3, "False");
 			assert.equal(firstCard.flag4, "False");
+		},
+	);
+
+	await t.test(
+		"maps all four question types and extracts image references from multi-format quiz",
+		() => {
+			const multiData = loadFixture("multi-format-quiz.json");
+			const cards = mapQuizDataToCards(
+				multiData.quiz,
+				multiData.imageUrls,
+			);
+
+			assert.equal(cards.length, 5);
+
+			// 1. Multiple Choice
+			const mcCard = cards[0];
+			assert.equal(mcCard.questionType, "MULTIPLE_CHOICE");
+			assert.equal(mcCard.flag1, "True");
+			assert.equal(mcCard.flag2, "False");
+
+			// 2. Multiple Select
+			const msCard = cards[1];
+			assert.equal(msCard.questionType, "MULTIPLE_SELECT");
+			assert.equal(msCard.flag1, "True");
+			assert.equal(msCard.flag2, "True");
+			assert.equal(msCard.flag3, "False");
+			assert.equal(msCard.flag4, "False");
+
+			// 3. Fill in the Blank
+			const fitbCard = cards[2];
+			assert.equal(fitbCard.questionType, "FILL_IN_THE_BLANK");
+			assert.equal(fitbCard.targetAnswer, "Ampere");
+			assert.equal(fitbCard.acceptableAnswers, "Amp, Amperes, A");
+			assert.ok(fitbCard.generalRationale.includes("Coulomb per second"));
+
+			// 4. Short Answer
+			const saCard = cards[3];
+			assert.equal(saCard.questionType, "SHORT_ANSWER");
+			assert.ok(saCard.targetAnswer.includes("voltage rise occurs"));
+			assert.ok(saCard.rubric.includes("• Defines voltage rise"));
+			assert.ok(
+				saCard.rubric.includes("⚠️ Stating that current direction"),
+			);
+			assert.ok(
+				saCard.generalRationale.includes(
+					"change in electrical potential",
+				),
+			);
+
+			// 5. Multiple Choice with inline image reference
+			const imgCard = cards[4];
+			assert.equal(imgCard.questionType, "MULTIPLE_CHOICE");
+			assert.equal(
+				imgCard.diagramUrl,
+				"https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+			);
+			assert.equal(
+				imgCard.diagramAlt,
+				"A diamond-shaped symbol with a plus and minus sign inside",
+			);
+			assert.equal(imgCard.diagramCaption, "Analog Signals and Systems");
+			assert.equal(
+				imgCard.question,
+				"Based on the provided source images, what type of component does this symbol represent?",
+			);
 		},
 	);
 
@@ -191,45 +279,85 @@ test("transformer: mapQuizDataToCards", async (t) => {
 });
 
 test("transformer: mapCardsToAnkiNotes", async (t) => {
-	await t.test("maps cards to exact 15-field Anki note structure", () => {
-		const standardData = loadFixture("standard-quiz.json");
-		const cards = mapQuizDataToCards(standardData.quiz);
-		const targetDeck = "NotebookLM::Chemistry & Astronomy::Quizzes::Test";
-		const notes = mapCardsToAnkiNotes(cards, targetDeck);
+	await t.test(
+		"maps cards to exact 20-field Anki note structure with Image and dual tags",
+		() => {
+			const standardData = loadFixture("standard-quiz.json");
+			const cards = mapQuizDataToCards(standardData.quiz);
+			const targetDeck =
+				"NotebookLM::Chemistry & Astronomy::Quizzes::Test";
+			const notes = mapCardsToAnkiNotes(cards, targetDeck);
 
-		assert.equal(notes.length, cards.length);
+			assert.equal(notes.length, cards.length);
 
-		const firstNote = notes[0];
-		assert.equal(firstNote.deckName, targetDeck);
-		assert.equal(firstNote.modelName, "NotebookLM Quiz");
-		assert.deepEqual(firstNote.tags, ["notebooklm_export"]);
-		assert.equal(firstNote.options.allowDuplicate, true);
+			const firstNote = notes[0];
+			assert.equal(firstNote.deckName, targetDeck);
+			assert.equal(firstNote.modelName, "NotebookLM Quiz");
+			assert.deepEqual(firstNote.tags, [
+				"notebooklm_export",
+				"google_notebook_export",
+			]);
+			assert.equal(firstNote.options.allowDuplicate, true);
 
-		const fields = firstNote.fields;
-		const expectedKeys = [
-			"Question",
-			"Hint",
-			"ArchDiagram",
-			"Option1",
-			"Rationale1",
-			"Flag1",
-			"Option2",
-			"Flag2",
-			"Rationale2",
-			"Option3",
-			"Flag3",
-			"Rationale3",
-			"Option4",
-			"Flag4",
-			"Rationale4",
-		];
+			const fields = firstNote.fields;
+			const expectedKeys = [
+				"Question",
+				"Hint",
+				"Image",
+				"Option1",
+				"Rationale1",
+				"Flag1",
+				"Option2",
+				"Flag2",
+				"Rationale2",
+				"Option3",
+				"Flag3",
+				"Rationale3",
+				"Option4",
+				"Flag4",
+				"Rationale4",
+				"QuestionType",
+				"TargetAnswer",
+				"AcceptableAnswers",
+				"Rubric",
+				"GeneralRationale",
+			];
 
-		assert.deepEqual(Object.keys(fields), expectedKeys);
-		assert.equal(fields.Question, cards[0].question);
-		assert.equal(fields.Hint, cards[0].hint);
-		assert.equal(fields.ArchDiagram, "");
-		assert.equal(fields.Option1, cards[0].option1);
-		assert.equal(fields.Rationale1, cards[0].rationale1);
-		assert.equal(fields.Flag1, "True");
-	});
+			assert.deepEqual(Object.keys(fields), expectedKeys);
+			assert.equal(fields.Question, cards[0].question);
+			assert.equal(fields.Hint, cards[0].hint);
+			assert.equal(fields.Image, "");
+			assert.equal(fields.Option1, cards[0].option1);
+			assert.equal(fields.Rationale1, cards[0].rationale1);
+			assert.equal(fields.Flag1, "True");
+			assert.equal(fields.QuestionType, "MULTIPLE_CHOICE");
+		},
+	);
+
+	await t.test(
+		"merges sanitized topic tags into note tags without duplicates",
+		() => {
+			const standardData = loadFixture("standard-quiz.json");
+			const cards = mapQuizDataToCards(standardData.quiz);
+			const targetDeck = "NotebookLM::Test";
+			const topicTags = [
+				"Ohm_Law",
+				"Circuit_Theory",
+				"notebooklm_export",
+			];
+			const notes = mapCardsToAnkiNotes(
+				cards,
+				targetDeck,
+				"NotebookLM Quiz",
+				topicTags,
+			);
+
+			assert.deepEqual(notes[0].tags, [
+				"notebooklm_export",
+				"google_notebook_export",
+				"Ohm_Law",
+				"Circuit_Theory",
+			]);
+		},
+	);
 });

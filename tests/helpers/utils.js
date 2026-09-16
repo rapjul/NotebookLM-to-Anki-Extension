@@ -55,6 +55,27 @@ export const mapCardsToAnkiNotes =
 	globalThis.NotebookLMToAnkiUtils.mapCardsToAnkiNotes;
 
 /**
+ * Re-exported extractQuestionMedia utility.
+ * @type {function(string, Array<string>=): { cleanQuestion: string, mediaUrl: string|null, alt: string|null, caption: string|null }}
+ */
+export const extractQuestionMedia =
+	globalThis.NotebookLMToAnkiUtils.extractQuestionMedia;
+
+/**
+ * Re-exported sanitizeTopicTags utility.
+ * @type {function(Array<string>|null|undefined): Array<string>}
+ */
+export const sanitizeTopicTags =
+	globalThis.NotebookLMToAnkiUtils.sanitizeTopicTags;
+
+/**
+ * Re-exported normalizeBlankAnswer utility.
+ * @type {function(string|null|undefined): string}
+ */
+export const normalizeBlankAnswer =
+	globalThis.NotebookLMToAnkiUtils.normalizeBlankAnswer;
+
+/**
  * Re-exported normalizeQuestionText utility.
  * @type {function(string|null|undefined): string}
  */
