@@ -126,13 +126,7 @@
 	 * @returns {string} The unescaped string.
 	 */
 	function unescapeHtml(str) {
-		if (!str) return "";
-		return str
-			.replace(/&quot;/g, '"')
-			.replace(/&amp;/g, "&")
-			.replace(/&lt;/g, "<")
-			.replace(/&gt;/g, ">")
-			.replace(/&#39;/g, "'");
+		return NotebookLMToAnkiUtils.unescapeHtml(str);
 	}
 
 	/**
@@ -162,90 +156,26 @@
 				);
 				return;
 			}
-			console.log(
-				"[Anki Bridge] 🧹 Unescaping raw HTML entities from JSON...",
-			);
-			const cleanJson = unescapeHtml(jsonString);
-			console.log("[Anki Bridge] 🔀 Parsing clean JSON...");
-			const data = JSON.parse(cleanJson);
-			console.log(
-				"[Anki Bridge] 📦 Parsed JSON data keys:",
-				Object.keys(data),
-			);
 
-			const quizData = data.quiz || data.mostRecentQuery?.quiz;
+			const { quizData, title } =
+				NotebookLMToAnkiUtils.parseQuizJson(jsonString);
 			console.log(
 				"[Anki Bridge] 🔍 Found quiz data:",
 				quizData ? `Array length ${quizData.length}` : "Not Found",
 			);
 
-			if (
-				!quizData ||
-				!Array.isArray(quizData) ||
-				quizData.length === 0
-			) {
-				console.error(
-					"[Anki Bridge] ❌ No valid quiz array found in parsed data.",
-				);
-				window.top.postMessage(
-					{ action: "ANKI_REAL_FAIL", error: "0 Questions Found." },
-					"*",
-				);
-				return;
-			}
-
-			let nbTitle = customNotebookTitle;
-			if (!nbTitle || nbTitle === "NotebookLM") {
-				nbTitle = "Unknown Notebook";
-			}
-			nbTitle = nbTitle.replace(/::/g, " - ").trim();
-
-			console.log(
-				"[Anki Bridge] 🏷️ getQuizTitle() raw call:",
-				getQuizTitle(),
+			const quizTitle = getQuizTitle() || title || "Quiz";
+			const finalTitle = NotebookLMToAnkiUtils.formatDeckTitle(
+				customNotebookTitle,
+				quizTitle,
+				quizDeckNameTemplate,
 			);
-			console.log("[Anki Bridge] 🏷️ data.title:", data.title);
-			let quizTitle = getQuizTitle() || data.title || "Quiz";
-			console.log("[Anki Bridge] 🏷️ Evaluated quizTitle:", quizTitle);
-			quizTitle = quizTitle.replace(/::/g, " - ").trim();
-
-			// Remove "Quiz | ", "Quiz - ", "Quiz: " prefix if it exists
-			quizTitle = quizTitle.replace(/^Quiz\s*[|\-:]\s*/i, "");
-
-			// Remove " Quiz" suffix if it exists
-			quizTitle = quizTitle.replace(/\s*Quiz$/i, "");
-
-			const finalTitle = quizDeckNameTemplate
-				.replace("{notebookName}", nbTitle)
-				.replace("{quizName}", quizTitle);
 			console.log(
 				"[Anki Bridge] 🏷️ Formatted deck final title:",
 				finalTitle,
 			);
 
-			const cards = quizData.map((q) => {
-				return {
-					question: q.question,
-					hint: q.hint || "",
-
-					// Capture raw values
-					option1: q.answerOptions[0]?.text || "",
-					flag1: q.answerOptions[0]?.isCorrect ? "True" : "False",
-					rationale1: q.answerOptions[0]?.rationale || "",
-
-					option2: q.answerOptions[1]?.text || "",
-					flag2: q.answerOptions[1]?.isCorrect ? "True" : "False",
-					rationale2: q.answerOptions[1]?.rationale || "",
-
-					option3: q.answerOptions[2]?.text || "",
-					flag3: q.answerOptions[2]?.isCorrect ? "True" : "False",
-					rationale3: q.answerOptions[2]?.rationale || "",
-
-					option4: q.answerOptions[3]?.text || "",
-					flag4: q.answerOptions[3]?.isCorrect ? "True" : "False",
-					rationale4: q.answerOptions[3]?.rationale || "",
-				};
-			});
+			const cards = NotebookLMToAnkiUtils.mapQuizDataToCards(quizData);
 			console.log(
 				"[Anki Bridge] 🗃️ Mapped cards count:",
 				cards.length,
@@ -261,8 +191,11 @@
 					action: "ANKI_EXTRACTED_DATA",
 					cards: cards,
 					deckTitle: finalTitle,
-					nbTitle: nbTitle,
-					quizTitle: quizTitle,
+					nbTitle:
+						NotebookLMToAnkiUtils.cleanNotebookTitle(
+							customNotebookTitle,
+						),
+					quizTitle: NotebookLMToAnkiUtils.cleanQuizTitle(quizTitle),
 				},
 				"*",
 			);
@@ -410,32 +343,17 @@
 	 * @returns {void}
 	 */
 	function handleExtractedData(cards, deckTitle, nbTitle, quizTitle) {
-		let finalDeckTitle = deckTitle;
-		const finalNbTitle = nbTitle || "Unknown Notebook";
-		let finalQuizTitle = quizTitle || "Quiz";
-
 		const domQuizTitle = getQuizTitle();
 		console.log(
 			"[Anki Bridge] 🏷️ getQuizTitle() from top window DOM:",
 			domQuizTitle,
 		);
-		if (domQuizTitle) {
-			finalQuizTitle = domQuizTitle;
-		}
-
-		let formattedQuizTitle = finalQuizTitle.replace(/::/g, " - ").trim();
-		// Strip the "Quiz | ", "Quiz - ", "Quiz: " prefix and " Quiz" suffix
-		formattedQuizTitle = formattedQuizTitle.replace(
-			/^Quiz\s*[|\-:]\s*/i,
-			"",
+		const resolvedQuizTitle = domQuizTitle || quizTitle;
+		const finalDeckTitle = NotebookLMToAnkiUtils.formatDeckTitle(
+			nbTitle,
+			resolvedQuizTitle,
+			quizDeckNameTemplate,
 		);
-		formattedQuizTitle = formattedQuizTitle.replace(/\s*Quiz$/i, "");
-
-		const formattedNbTitle = finalNbTitle.replace(/::/g, " - ").trim();
-
-		finalDeckTitle = quizDeckNameTemplate
-			.replace("{notebookName}", formattedNbTitle)
-			.replace("{quizName}", formattedQuizTitle);
 
 		console.log(
 			"[Anki Bridge] 🏷️ Refined final deck title:",
@@ -607,47 +525,7 @@
 	 * @returns {string} The formatted error summary text.
 	 */
 	function formatErrorMessage(errorVal) {
-		if (!errorVal) return "Unknown Error";
-
-		let errorStr = "";
-		if (Array.isArray(errorVal)) {
-			errorStr = JSON.stringify(errorVal);
-		} else {
-			errorStr = String(errorVal);
-		}
-
-		let messages = [];
-		if (errorStr.trim().startsWith("[") && errorStr.trim().endsWith("]")) {
-			try {
-				const regex = /['"](.*?)['"]/g;
-				const matches = errorStr.matchAll(regex);
-				for (const match of matches) {
-					messages.push(match[1]);
-				}
-			} catch {
-				messages = [errorStr];
-			}
-		} else {
-			messages = [errorStr];
-		}
-
-		if (messages.length === 0) {
-			messages = [errorStr];
-		}
-
-		const counts = {};
-		for (const msg of messages) {
-			counts[msg] = (counts[msg] || 0) + 1;
-		}
-
-		const formattedLines = Object.entries(counts).map(([msg, count]) => {
-			if (count > 1) {
-				return `${msg} (x${count})`;
-			}
-			return msg;
-		});
-
-		return formattedLines.join("\n");
+		return NotebookLMToAnkiUtils.formatErrorMessage(errorVal);
 	}
 
 	/**

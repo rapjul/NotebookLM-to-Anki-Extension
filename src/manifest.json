@@ -35,7 +35,7 @@
         "https://notebooklm.google.com/*",
         "https://*.usercontent.goog/*"
       ],
-      "js": ["content.js"],
+      "js": ["utils.js", "content.js"],
       "css": ["modal.css"],
       "all_frames": true,
       "match_origin_as_fallback": true,

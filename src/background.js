@@ -1,4 +1,5 @@
 // background.js - v10.0 (Generic Public Release)
+importScripts("utils.js");
 
 /**
  * Toggle for debug logging state, updated asynchronously from local storage.
@@ -156,43 +157,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 		 */
 		const NOTE_TYPE = "NotebookLM Quiz";
 
-		// 2. FIELD MAPPING (Your verified 15-field map)
-		const notes = request.batchData.map((card) => {
-			return {
-				deckName: TARGET_DECK,
-				modelName: NOTE_TYPE,
-				fields: {
-					// --- HEADER FIELDS ---
-					Question: card.question,
-					Hint: card.hint,
-					ArchDiagram: "",
-
-					// --- OPTION 1 (Rationale First) ---
-					Option1: card.option1,
-					Rationale1: card.rationale1,
-					Flag1: card.flag1,
-
-					// --- OPTION 2 (Flag First) ---
-					Option2: card.option2,
-					Flag2: card.flag2,
-					Rationale2: card.rationale2,
-
-					// --- OPTION 3 (Flag First) ---
-					Option3: card.option3,
-					Flag3: card.flag3,
-					Rationale3: card.rationale3,
-
-					// --- OPTION 4 (Flag First) ---
-					Option4: card.option4,
-					Flag4: card.flag4,
-					Rationale4: card.rationale4,
-				},
-				options: {
-					allowDuplicate: true,
-				},
-				tags: ["notebooklm_export"],
-			};
-		});
+		// 2. FIELD MAPPING (via shared utilities)
+		const notes = NotebookLMToAnkiUtils.mapCardsToAnkiNotes(
+			request.batchData,
+			TARGET_DECK,
+			NOTE_TYPE,
+		);
 
 		console.log(
 			"[Anki Background] 🛠️ Ensuring NotebookLM Quiz model exists...",
@@ -292,25 +262,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 										Array.isArray(infoResult.result)
 									) {
 										infoResult.result.forEach((note) => {
-											if (note?.fields?.Question) {
+											if (note?.fields?.Question?.value) {
 												existingQuestions.add(
-													note.fields.Question.value
-														.trim()
-														.toLowerCase(),
+													NotebookLMToAnkiUtils.normalizeQuestionText(
+														note.fields.Question
+															.value,
+													),
 												);
 											}
 										});
 									}
 
-									finalNotesToSend = notes.filter((n) => {
-										const qText =
-											n.fields.Question.trim().toLowerCase();
-										if (existingQuestions.has(qText)) {
-											initialSkippedCount++;
-											return false;
-										}
-										return true;
-									});
+									const filterResult =
+										NotebookLMToAnkiUtils.filterDuplicateNotes(
+											notes,
+											existingQuestions,
+										);
+									finalNotesToSend = filterResult.notesToSend;
+									initialSkippedCount =
+										filterResult.skippedCount;
 
 									console.log(
 										"[Anki Background] 🔍 Local duplicate check complete. Original:",
