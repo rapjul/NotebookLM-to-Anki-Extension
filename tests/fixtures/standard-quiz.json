@@ -1,0 +1,109 @@
+{
+  "title": "Basic Chemistry and Astronomy Quiz",
+  "quiz": [
+    {
+      "question": "What is the atomic number of Carbon, and how many valence electrons does a neutral carbon atom have in its ground state?",
+      "hint": "Recall the group number and position of carbon on the periodic table.",
+      "answerOptions": [
+        {
+          "text": "Atomic number 6; 4 valence electrons",
+          "isCorrect": true,
+          "rationale": "Carbon has 6 protons, giving it an atomic number of 6, with electron configuration $1s^2 2s^2 2p^2$, resulting in 4 valence electrons in the outer shell."
+        },
+        {
+          "text": "Atomic number 12; 6 valence electrons",
+          "isCorrect": false,
+          "rationale": "12 is the standard atomic mass in atomic mass units (amu), not the atomic number."
+        },
+        {
+          "text": "Atomic number 6; 2 valence electrons",
+          "isCorrect": false,
+          "rationale": "Carbon has 4 valence electrons in the second shell (2s and 2p), not 2."
+        },
+        {
+          "text": "Atomic number 8; 4 valence electrons",
+          "isCorrect": false,
+          "rationale": "Atomic number 8 corresponds to Oxygen, not Carbon."
+        }
+      ]
+    },
+    {
+      "question": "According to Kepler's First Law of Planetary Motion, what shape are the orbits of planets orbiting the Sun?",
+      "hint": "Think about conic sections with two focal points.",
+      "answerOptions": [
+        {
+          "text": "Ellipses with the Sun situated at one focus",
+          "isCorrect": true,
+          "rationale": "Kepler's First Law states that all planets move in elliptical orbits with the Sun at one of the two foci."
+        },
+        {
+          "text": "Perfect circles with the Sun positioned at the center",
+          "isCorrect": false,
+          "rationale": "Prior to Kepler, circular orbits were assumed, but planetary orbits possess non-zero eccentricities forming ellipses."
+        },
+        {
+          "text": "Parabolas with the Sun at the vertex",
+          "isCorrect": false,
+          "rationale": "Parabolic trajectories represent unbound escape orbits, not periodic planetary orbits."
+        },
+        {
+          "text": "Hyperbolas with the Sun situated at the center",
+          "isCorrect": false,
+          "rationale": "Hyperbolic trajectories describe non-periodic flybys of unbound astronomical bodies."
+        }
+      ]
+    },
+    {
+      "question": "Which of the following describes an aqueous solution with a pH of 3 at standard temperature ($25^\\circ\\text{C}$)?",
+      "hint": "Consider the relationship between pH, hydronium ion concentration, and neutrality.",
+      "answerOptions": [
+        {
+          "text": "Acidic, with $[H_{3}O^{+}] = 1.0 \\times 10^{-3}\\text{ M}$",
+          "isCorrect": true,
+          "rationale": "At $25^\\circ\\text{C}$, $\\text{pH} = -\\log[H_{3}O^{+}]$. A pH below 7 indicates an acidic solution where $[H_{3}O^{+}] = 10^{-3}\\text{ M}$."
+        },
+        {
+          "text": "Basic, with $[H_{3}O^{+}] = 1.0 \\times 10^{-3}\\text{ M}$",
+          "isCorrect": false,
+          "rationale": "Solutions with pH below 7 are acidic, not basic."
+        },
+        {
+          "text": "Neutral, with $[OH^{-}] = 1.0 \\times 10^{-3}\\text{ M}$",
+          "isCorrect": false,
+          "rationale": "A neutral solution at $25^\\circ\\text{C}$ has a pH of exactly 7."
+        },
+        {
+          "text": "Acidic, with $[OH^{-}] = 1.0 \\times 10^{-3}\\text{ M}$",
+          "isCorrect": false,
+          "rationale": "If $[OH^{-}]$ were $1.0 \\times 10^{-3}\\text{ M}$, the pOH would be 3 and the pH would be 11, which is strongly basic."
+        }
+      ]
+    },
+    {
+      "question": "What is the primary astronomical definition of one light-year?",
+      "hint": "Focus on the physical quantity measured by this unit.",
+      "answerOptions": [
+        {
+          "text": "The distance that light travels in vacuum in one Julian year (approx. 9.46 trillion km)",
+          "isCorrect": true,
+          "rationale": "A light-year is a unit of astronomical length/distance, equal to the speed of light multiplied by one Julian year."
+        },
+        {
+          "text": "The time it takes for light from the Sun to reach the edge of the Solar System",
+          "isCorrect": false,
+          "rationale": "A light-year measures distance rather than elapsed time."
+        },
+        {
+          "text": "The average distance between Earth and the Sun",
+          "isCorrect": false,
+          "rationale": "The average distance between Earth and the Sun is defined as one astronomical unit (AU), roughly 149.6 million km."
+        },
+        {
+          "text": "The brightness of a standard star viewed from a distance of 10 parsecs",
+          "isCorrect": false,
+          "rationale": "This describes absolute visual magnitude, not a light-year."
+        }
+      ]
+    }
+  ]
+}

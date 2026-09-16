@@ -1,0 +1,135 @@
+{
+  "title": "Mathematics and Physics Foundations",
+  "quiz": [
+    {
+      "question": "Given a general quadratic equation $ax^2 + bx + c = 0$ where $a \\neq 0$, which formula provides the roots for $x$?",
+      "hint": "Derive by completing the square.",
+      "answerOptions": [
+        {
+          "text": "$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$$",
+          "isCorrect": true,
+          "rationale": "The standard quadratic formula yields the real or complex solutions depending on the discriminant $\\Delta = b^2 - 4ac$."
+        },
+        {
+          "text": "$$x = \\frac{-b \\pm \\sqrt{b^2 + 4ac}}{2a}$$",
+          "isCorrect": false,
+          "rationale": "The discriminant requires $-4ac$, not $+4ac$."
+        },
+        {
+          "text": "$$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{a}$$",
+          "isCorrect": false,
+          "rationale": "The denominator must be $2a$, not $a$."
+        },
+        {
+          "text": "$$x = \\frac{b \\pm \\sqrt{b^2 - 4ac}}{2a}$$",
+          "isCorrect": false,
+          "rationale": "The leading linear coefficient term must be $-b$ rather than $+b$."
+        }
+      ]
+    },
+    {
+      "question": "In Euclidean geometry, what relationship holds between the side lengths $a$, $b$, and hypotenuse $c$ of any right-angled triangle?",
+      "hint": "Named after the ancient Greek mathematician.",
+      "answerOptions": [
+        {
+          "text": "$$a^2 + b^2 = c^2$$",
+          "isCorrect": true,
+          "rationale": "The Pythagorean theorem establishes that the sum of the squares on the legs equals the square on the hypotenuse."
+        },
+        {
+          "text": "$$a^2 - b^2 = c^2$$",
+          "isCorrect": false,
+          "rationale": "Leg lengths are summed, not subtracted."
+        },
+        {
+          "text": "$$(a + b)^2 = c^2$$",
+          "isCorrect": false,
+          "rationale": "This expands to $a^2 + 2ab + b^2$, which exceeds $c^2$ for all non-degenerate triangles."
+        },
+        {
+          "text": "$$\\sqrt{a} + \\sqrt{b} = \\sqrt{c}$$",
+          "isCorrect": false,
+          "rationale": "The theorem operates on square powers, not square roots."
+        }
+      ]
+    },
+    {
+      "question": "Which fundamental trigonometric identity holds for any real angle $\\theta$?",
+      "hint": "Derived directly from the unit circle equation $x^2 + y^2 = 1$.",
+      "answerOptions": [
+        {
+          "text": "$\\sin^2\\theta + \\cos^2\\theta = 1$",
+          "isCorrect": true,
+          "rationale": "On the unit circle, coordinates are $(\\cos\\theta, \\sin\\theta)$, so $\\cos^2\\theta + \\sin^2\\theta = 1$ identically for all $\\theta$."
+        },
+        {
+          "text": "$\\sin^2\\theta - \\cos^2\\theta = 1$",
+          "isCorrect": false,
+          "rationale": "$\\cos^2\\theta - \\sin^2\\theta = \\cos(2\\theta)$, not $1$."
+        },
+        {
+          "text": "$\\tan^2\\theta + 1 = \\sin^2\\theta$",
+          "isCorrect": false,
+          "rationale": "The correct identity is $1 + \\tan^2\\theta = \\sec^2\\theta$."
+        },
+        {
+          "text": "$\\sin\\theta + \\cos\\theta = 1$",
+          "isCorrect": false,
+          "rationale": "This only holds for specific discrete angles (such as $\\theta = 0$ or $\\pi/2$), not identically."
+        }
+      ]
+    },
+    {
+      "question": "According to the fundamental theorem of calculus, if $F'(x) = f(x)$ on $[a, b]$, what is the value of $\\int_a^b f(x)\\,dx$?",
+      "hint": "Evaluate the antiderivative at the boundary limits.",
+      "answerOptions": [
+        {
+          "text": "$$F(b) - F(a)$$",
+          "isCorrect": true,
+          "rationale": "The second fundamental theorem of calculus states that the definite integral of a continuous function equals the net change of its antiderivative."
+        },
+        {
+          "text": "$$F(a) - F(b)$$",
+          "isCorrect": false,
+          "rationale": "The lower boundary evaluation must be subtracted from the upper boundary evaluation."
+        },
+        {
+          "text": "$$F'(b) - F'(a)$$",
+          "isCorrect": false,
+          "rationale": "This would compute $f(b) - f(a)$, which is not the integral."
+        },
+        {
+          "text": "$$F(b) \\cdot F(a)$$",
+          "isCorrect": false,
+          "rationale": "The operation is subtraction, not multiplication."
+        }
+      ]
+    },
+    {
+      "question": "What is the time-dependent Schrödinger equation governing a non-relativistic quantum mechanical wave function $\\Psi(\\mathbf{r}, t)$?",
+      "hint": "Connects the Hamiltonian operator to the partial time derivative.",
+      "answerOptions": [
+        {
+          "text": "$$i\\hbar \\frac{\\partial}{\\partial t} \\Psi = \\hat{H} \\Psi$$",
+          "isCorrect": true,
+          "rationale": "The time-dependent Schrödinger equation describes how the quantum state of a physical system changes over time under the Hamiltonian operator $\\hat{H}$."
+        },
+        {
+          "text": "$$\\hbar \\frac{\\partial^2}{\\partial t^2} \\Psi = \\hat{H} \\Psi$$",
+          "isCorrect": false,
+          "rationale": "The equation is first-order in time with imaginary unit $i$, unlike the classical wave equation."
+        },
+        {
+          "text": "$$E = mc^2$$",
+          "isCorrect": false,
+          "rationale": "This expresses Einstein's relativistic mass-energy equivalence, not the Schrödinger wave equation."
+        },
+        {
+          "text": "$$\\nabla \\cdot \\mathbf{E} = \\frac{\\rho}{\\varepsilon_0}$$",
+          "isCorrect": false,
+          "rationale": "This represents Gauss's law for electrostatics from Maxwell's equations."
+        }
+      ]
+    }
+  ]
+}

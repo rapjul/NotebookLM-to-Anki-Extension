@@ -1,0 +1,44 @@
+{
+  "title": "Quiz: Scientific Edge Cases &amp; Anomalies Quiz",
+  "mostRecentQuery": {
+    "quiz": [
+      {
+        "question": "Is pure liquid water at $25^\\circ\\text{C}$ considered an amphoteric substance under Br&oslash;nsted-Lowry theory?",
+        "hint": "",
+        "answerOptions": [
+          {
+            "text": "True &mdash; it can act as both an acid and a base.",
+            "isCorrect": true,
+            "rationale": "Water can donate a proton to form $OH^{-}$ or accept a proton to form $H_{3}O^{+}$."
+          },
+          {
+            "text": "False &mdash; it acts exclusively as a neutral solvent.",
+            "isCorrect": false,
+            "rationale": ""
+          }
+        ]
+      },
+      {
+        "question": "Which transition metal ion exhibits a $d^{10}$ closed-shell configuration in its +2 oxidation state?",
+        "hint": "Found in group 12 of the periodic table.",
+        "answerOptions": [
+          {
+            "text": "$Zn^{2+}$",
+            "isCorrect": true,
+            "rationale": "Zinc loses its two $4s$ electrons upon ionization, leaving a completely filled $[Ar]3d^{10}$ configuration."
+          },
+          {
+            "text": "$Fe^{2+}$",
+            "isCorrect": false,
+            "rationale": "Iron(II) has a $3d^6$ valence configuration."
+          },
+          {
+            "text": "$Cu^{2+}$",
+            "isCorrect": false,
+            "rationale": "Copper(II) has a $3d^9$ valence configuration."
+          }
+        ]
+      }
+    ]
+  }
+}
