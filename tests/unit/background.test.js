@@ -651,7 +651,15 @@ test("background: model auto-creation when missing in Anki", async (t) => {
 			modelCreated = true;
 			assert.equal(parsed.params.modelName, "NotebookLM Quiz");
 			assert.ok(Array.isArray(parsed.params.inOrderFields));
-			assert.equal(parsed.params.inOrderFields.length, 15);
+			assert.equal(parsed.params.inOrderFields.length, 20);
+			assert.ok(parsed.params.inOrderFields.includes("Image"));
+			assert.ok(parsed.params.inOrderFields.includes("QuestionType"));
+			assert.ok(parsed.params.inOrderFields.includes("TargetAnswer"));
+			assert.ok(
+				parsed.params.inOrderFields.includes("AcceptableAnswers"),
+			);
+			assert.ok(parsed.params.inOrderFields.includes("Rubric"));
+			assert.ok(parsed.params.inOrderFields.includes("GeneralRationale"));
 			assert.ok(parsed.params.css.includes(".quiz-column"));
 			assert.ok(
 				parsed.params.cardTemplates[0].Front.includes("{{Question}}"),
@@ -752,6 +760,259 @@ test("background: model auto-creation when missing in Anki", async (t) => {
 				response.error.includes(
 					"Failed to create note type: model already exists in collection",
 				),
+			);
+		},
+	);
+});
+
+test("background: model schema migration for existing Note Type", async (t) => {
+	const baseMockFetch = createMockFetch();
+	const migrationCalls = [];
+
+	fetchHandler = async (url, options = {}) => {
+		if (url.startsWith("chrome-extension://")) {
+			return baseMockFetch(url, options);
+		}
+
+		const parsed = JSON.parse(options.body);
+		migrationCalls.push(parsed);
+
+		if (parsed.action === "modelNames") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					result: ["NotebookLM Quiz"],
+					error: null,
+				}),
+			};
+		}
+
+		if (parsed.action === "modelFieldNames") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					result: [
+						"Question",
+						"Hint",
+						"ArchDiagram",
+						"Option1",
+						"Rationale1",
+						"Flag1",
+						"Option2",
+						"Flag2",
+						"Rationale2",
+						"Option3",
+						"Flag3",
+						"Rationale3",
+						"Option4",
+						"Flag4",
+						"Rationale4",
+					],
+					error: null,
+				}),
+			};
+		}
+
+		if (parsed.action === "modelFieldRename") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: null, error: null }),
+			};
+		}
+
+		if (parsed.action === "modelFieldAdd") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: null, error: null }),
+			};
+		}
+
+		if (parsed.action === "updateModelTemplates") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: null, error: null }),
+			};
+		}
+
+		if (parsed.action === "updateModelStyling") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: null, error: null }),
+			};
+		}
+
+		if (parsed.action === "createDeck") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: 501, error: null }),
+			};
+		}
+
+		if (parsed.action === "addNotes") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: [5001], error: null }),
+			};
+		}
+
+		return {
+			ok: true,
+			status: 200,
+			json: async () => ({ result: null, error: null }),
+		};
+	};
+
+	await t.test(
+		"renames ArchDiagram to Image and adds missing adaptive fields",
+		async () => {
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "MigrateModelDeck",
+				duplicateAction: "increment",
+				batchData: [standardCards[0]],
+			});
+
+			assert.equal(response.success, true);
+
+			const renames = migrationCalls.filter(
+				(c) => c.action === "modelFieldRename",
+			);
+			assert.equal(renames.length, 1);
+			assert.equal(renames[0].params.oldFieldName, "ArchDiagram");
+			assert.equal(renames[0].params.newFieldName, "Image");
+
+			const additions = migrationCalls.filter(
+				(c) => c.action === "modelFieldAdd",
+			);
+			const addedNames = additions.map((c) => c.params.fieldName);
+			assert.ok(addedNames.includes("QuestionType"));
+			assert.ok(addedNames.includes("TargetAnswer"));
+			assert.ok(addedNames.includes("AcceptableAnswers"));
+			assert.ok(addedNames.includes("Rubric"));
+			assert.ok(addedNames.includes("GeneralRationale"));
+		},
+	);
+});
+
+test("background: media downloading and embedding", async (t) => {
+	const baseMockFetch = createMockFetch();
+	const ankiCalls = [];
+
+	fetchHandler = async (url, options = {}) => {
+		if (url.startsWith("chrome-extension://")) {
+			return baseMockFetch(url, options);
+		}
+
+		const parsed = JSON.parse(options.body);
+		ankiCalls.push(parsed);
+
+		if (parsed.action === "modelNames") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					result: ["NotebookLM Quiz"],
+					error: null,
+				}),
+			};
+		}
+
+		if (parsed.action === "createDeck") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: 601, error: null }),
+			};
+		}
+
+		if (parsed.action === "storeMediaFile") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({
+					result: parsed.params.filename,
+					error: null,
+				}),
+			};
+		}
+
+		if (parsed.action === "addNotes") {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => ({ result: [6001], error: null }),
+			};
+		}
+
+		return {
+			ok: true,
+			status: 200,
+			json: async () => ({ result: null, error: null }),
+		};
+	};
+
+	await t.test(
+		"downloads diagramUrl via storeMediaFile and embeds local img HTML with caption",
+		async () => {
+			const cardWithMedia = {
+				question: "What does this circuit diagram depict?",
+				hint: "Check polarity",
+				diagramUrl:
+					"https://lh3.googleusercontent.com/test-circuit-symbol.png",
+				diagramAlt: "Circuit Diagram",
+				diagramCaption: "Figure 1.1 Schematic",
+				option1: "Voltage Source",
+				flag1: "True",
+				rationale1: "Polarity indicates voltage",
+			};
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "MediaDeck",
+				duplicateAction: "increment",
+				batchData: [cardWithMedia],
+				topicsCovered: ["Circuits", "Ohm's Law"],
+			});
+
+			assert.equal(response.success, true);
+
+			const mediaCall = ankiCalls.find(
+				(c) => c.action === "storeMediaFile",
+			);
+			assert.ok(mediaCall, "storeMediaFile should have been called");
+			assert.equal(
+				mediaCall.params.url,
+				"https://lh3.googleusercontent.com/test-circuit-symbol.png",
+			);
+			assert.ok(
+				mediaCall.params.filename.startsWith("notebooklm_"),
+				"filename should start with notebooklm_",
+			);
+
+			const addNotesCall = ankiCalls.find((c) => c.action === "addNotes");
+			assert.ok(addNotesCall, "addNotes should have been called");
+			const note = addNotesCall.params.notes[0];
+			assert.ok(
+				note.fields.Image.includes(
+					`<img src="${mediaCall.params.filename}" alt="Circuit Diagram">`,
+				),
+			);
+			assert.ok(
+				note.fields.Image.includes(
+					'<div class="diagram-caption">Figure 1.1 Schematic</div>',
+				),
+			);
+			assert.ok(
+				note.tags.includes("Circuits"),
+				"Topic tags should be included in note",
 			);
 		},
 	);

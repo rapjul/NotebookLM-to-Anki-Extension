@@ -324,3 +324,62 @@ test("integration: AnkiConnect API error propagation", async (t) => {
 		},
 	);
 });
+
+test("integration: media file storage and model schema contract", async (t) => {
+	await t.test(
+		"storeMediaFile contracts with AnkiConnect media storage endpoint",
+		async () => {
+			t.mock.method(globalThis, "fetch", async (url, options) => {
+				const body = JSON.parse(options.body);
+				assert.equal(body.action, "storeMediaFile");
+				assert.equal(body.params.filename, "notebooklm_test_0.png");
+				assert.equal(
+					body.params.url,
+					"https://lh3.googleusercontent.com/test.png",
+				);
+				return {
+					ok: true,
+					json: async () => ({
+						result: "notebooklm_test_0.png",
+						error: null,
+					}),
+				};
+			});
+
+			const res = await callAnkiConnect("storeMediaFile", {
+				filename: "notebooklm_test_0.png",
+				url: "https://lh3.googleusercontent.com/test.png",
+			});
+			assert.equal(res.result, "notebooklm_test_0.png");
+			assert.equal(res.error, null);
+		},
+	);
+
+	await t.test(
+		"modelFieldRename and modelFieldAdd contract with AnkiConnect schema API",
+		async () => {
+			const actions = [];
+			t.mock.method(globalThis, "fetch", async (url, options) => {
+				const body = JSON.parse(options.body);
+				actions.push(body.action);
+				return {
+					ok: true,
+					json: async () => ({ result: null, error: null }),
+				};
+			});
+
+			await callAnkiConnect("modelFieldRename", {
+				modelName: "NotebookLM Quiz",
+				oldFieldName: "ArchDiagram",
+				newFieldName: "Image",
+			});
+
+			await callAnkiConnect("modelFieldAdd", {
+				modelName: "NotebookLM Quiz",
+				fieldName: "QuestionType",
+			});
+
+			assert.deepEqual(actions, ["modelFieldRename", "modelFieldAdd"]);
+		},
+	);
+});
