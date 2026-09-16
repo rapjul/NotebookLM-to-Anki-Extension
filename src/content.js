@@ -6,6 +6,10 @@
 	 * @type {boolean}
 	 */
 	let enableDebug = true;
+	/**
+	 * Configured template string for formatting Anki deck names.
+	 * @type {string}
+	 */
 	let quizDeckNameTemplate =
 		"NotebookLM::{notebookName}::Quizzes::{quizName}";
 
@@ -36,6 +40,11 @@
 
 	/**
 	 * Local shadow console to conditionally forward logs to window.console.
+	 * @type {{
+	 *   log: function(...*): void,
+	 *   warn: function(...*): void,
+	 *   error: function(...*): void
+	 * }}
 	 */
 	const console = {
 		log: (...args) => {
@@ -49,6 +58,10 @@
 		},
 	};
 
+	/**
+	 * Configuration constants for the UI injector.
+	 * @type {{ BUTTON_ID: string, ANCHOR_SELECTORS: Array<string> }}
+	 */
 	const CONFIG = {
 		BUTTON_ID: "notebooklm-to-anki-btn",
 		ANCHOR_SELECTORS: [
@@ -533,6 +546,10 @@
 
 		overlay.classList.add("show");
 
+		/**
+		 * Helper function to dismiss the duplicate resolution modal overlay.
+		 * @returns {void}
+		 */
 		const close = () => {
 			overlay.classList.remove("show");
 		};

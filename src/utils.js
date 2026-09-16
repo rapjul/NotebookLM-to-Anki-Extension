@@ -494,6 +494,24 @@
 		};
 	}
 
+	/**
+	 * Shared utility functions exported by the module.
+	 * @type {{
+	 *   unescapeHtml: function(string): string,
+	 *   cleanNotebookTitle: function((string|null|undefined)): string,
+	 *   cleanQuizTitle: function((string|null|undefined)): string,
+	 *   formatDeckTitle: function((string|null|undefined), (string|null|undefined), string=): string,
+	 *   formatErrorMessage: function((string|Array<string>|null|undefined)): string,
+	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string },
+	 *   sanitizeTopicTags: function((Array<string>|null|undefined)): Array<string>,
+	 *   normalizeBlankAnswer: function((string|null|undefined)): string,
+	 *   parseQuizJson: function(string, (string|Array<string>|null|undefined)=): { quizData: Array<object>, title: (string|undefined), topicsCovered: Array<string>, imageUrls: Array<string> },
+	 *   mapQuizDataToCards: function(Array<object>, Array<string>=): Array<object>,
+	 *   mapCardsToAnkiNotes: function(Array<object>, string, string=, Array<string>=): Array<object>,
+	 *   normalizeQuestionText: function((string|null|undefined)): string,
+	 *   filterDuplicateNotes: function(Array<object>, Set<string>): { notesToSend: Array<object>, skippedCount: number }
+	 * }}
+	 */
 	const utils = {
 		unescapeHtml,
 		cleanNotebookTitle,

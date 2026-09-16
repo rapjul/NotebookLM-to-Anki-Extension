@@ -1,8 +1,16 @@
+/**
+ * Initializes the popup UI, loads stored user settings, and attaches event listeners.
+ */
 document.addEventListener("DOMContentLoaded", () => {
+	/** @type {HTMLButtonElement|null} */
 	const btn = document.getElementById("sendToAnki");
+	/** @type {HTMLElement|null} */
 	const statusEl = document.getElementById("status");
+	/** @type {HTMLElement|null} */
 	const debugStatusEl = document.getElementById("debug-status");
+	/** @type {HTMLButtonElement|null} */
 	const toggleDebugBtn = document.getElementById("toggleDebug");
+	/** @type {HTMLInputElement|null} */
 	const deckNameTemplateInput = document.getElementById(
 		"quizDeckNameTemplate",
 	);
@@ -22,14 +30,27 @@ document.addEventListener("DOMContentLoaded", () => {
 		},
 	);
 
+	/**
+	 * Handles changes to the deck name template input field by persisting to storage.
+	 *
+	 * @param {Event} e - Input event containing updated value.
+	 * @returns {void}
+	 */
+	const handleTemplateInput = (e) => {
+		chrome.storage.local.set({ quizDeckNameTemplate: e.target.value });
+	};
+
 	// Save template changes
 	if (deckNameTemplateInput) {
-		deckNameTemplateInput.addEventListener("input", (e) => {
-			chrome.storage.local.set({ quizDeckNameTemplate: e.target.value });
-		});
+		deckNameTemplateInput.addEventListener("input", handleTemplateInput);
 	}
 
-	btn.addEventListener("click", async () => {
+	/**
+	 * Handles clicking the capture/export button by injecting content scripts into the active tab.
+	 *
+	 * @returns {Promise<void>}
+	 */
+	const handleCaptureClick = async () => {
 		statusEl.textContent = "🤖 Robot initializing...";
 		try {
 			const [tab] = await chrome.tabs.query({
@@ -44,16 +65,29 @@ document.addEventListener("DOMContentLoaded", () => {
 		} catch (e) {
 			statusEl.textContent = `Error: ${e.message}`;
 		}
-	});
+	};
 
-	toggleDebugBtn.addEventListener("click", () => {
+	if (btn) {
+		btn.addEventListener("click", handleCaptureClick);
+	}
+
+	/**
+	 * Toggles debug logging on and off in chrome.storage.local and refreshes the popup UI.
+	 *
+	 * @returns {void}
+	 */
+	const handleToggleDebugClick = () => {
 		chrome.storage.local.get({ enableDebugLogging: true }, (res) => {
 			const newValue = !res.enableDebugLogging;
 			chrome.storage.local.set({ enableDebugLogging: newValue }, () => {
 				updateDebugUi(newValue);
 			});
 		});
-	});
+	};
+
+	if (toggleDebugBtn) {
+		toggleDebugBtn.addEventListener("click", handleToggleDebugClick);
+	}
 
 	/**
 	 * Updates the debug configuration UI display state.

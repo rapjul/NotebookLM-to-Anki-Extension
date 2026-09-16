@@ -21,6 +21,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 /**
  * Local shadow console to conditionally forward logs to self.console.
+ * @type {{
+ *   log: function(...*): void,
+ *   warn: function(...*): void,
+ *   error: function(...*): void
+ * }}
  */
 const console = {
 	log: (...args) => {
@@ -254,7 +259,17 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			request.batchData ? request.batchData.length : 0,
 		);
 
+		/**
+		 * The destination deck name in Anki where the cards will be stored.
+		 * @type {string}
+		 */
 		const TARGET_DECK = request.deckTitle;
+		/**
+		 * The custom Anki Note Type containing the schema for NotebookLM Quiz cards.
+		 *
+		 * IMPORTANT: Make sure this NOTE_TYPE exists in Anki before running the extension.
+		 * @type {string}
+		 */
 		const NOTE_TYPE = "NotebookLM Quiz";
 
 		// 1. Ensure Model exists and schema is up-to-date
@@ -478,7 +493,11 @@ async function ensureNotebookLMModelExists() {
 		throw new Error(data.error);
 	}
 
-	// Helper to load templates and CSS from extension package
+	/**
+	 * Loads card templates (front/back HTML) and CSS styles asynchronously from extension assets.
+	 *
+	 * @returns {Promise<[string, string, string]>} Promise resolving to [frontHtml, backHtml, stylingCss].
+	 */
 	const loadLocalTemplates = async () => {
 		const frontUrl = chrome.runtime.getURL("anki_templates/front.html");
 		const backUrl = chrome.runtime.getURL("anki_templates/back.html");
