@@ -2,6 +2,19 @@
 
 (() => {
 	/**
+	 * Extension version identifier dynamically read from extension manifest or fallback.
+	 * @type {string}
+	 */
+	const EXTENSION_VERSION =
+		(typeof chrome !== "undefined" &&
+			chrome.runtime?.getManifest?.()?.version) ||
+		"4.1.0";
+
+	window.console.log(
+		`[Anki Bridge] 🚀 NotebookLM to Anki Extension v${EXTENSION_VERSION} loaded.`,
+	);
+
+	/**
 	 * Toggle for debug logging state, updated asynchronously from local storage.
 	 * @type {boolean}
 	 */
@@ -149,19 +162,19 @@
 	/**
 	 * Parses and processes the raw JSON string extracted from the page,
 	 * formats the deck title, maps quiz questions to flashcard structures,
-	 * and posts the extracted data to the top window.
+	 * and posts the extracted data to the top window for Anki export.
 	 * @param {string} jsonString - The raw, potentially HTML-escaped JSON data.
 	 * @param {string} customNotebookTitle - The notebook title to use for naming the deck.
 	 * @param {string|null} [rawImageUrls=null] - Optional raw data-image-urls attribute string.
-	 * @returns {void}
+	 * @returns {Promise<void>}
 	 */
-	function processBatch(
+	async function processBatch(
 		jsonString,
 		customNotebookTitle,
 		rawImageUrls = null,
 	) {
 		console.log(
-			"[Anki Bridge] 🔨 processBatch started. Custom notebook title:",
+			`[Anki Bridge] 🔨 processBatch started (v${EXTENSION_VERSION}). Custom notebook title:`,
 			customNotebookTitle,
 		);
 		try {
@@ -185,6 +198,13 @@
 				"[Anki Bridge] 🔍 Found quiz data:",
 				quizData ? `Array length ${quizData.length}` : "Not Found",
 			);
+
+			if (imageUrls && imageUrls.length > 0) {
+				console.log(
+					`[Anki Bridge] 🖼️ Extracted image URLs (${imageUrls.length}):`,
+					imageUrls,
+				);
+			}
 
 			const quizTitle = getQuizTitle() || title || "Quiz";
 			const finalTitle = NotebookLMToAnkiUtils.formatDeckTitle(
@@ -289,9 +309,16 @@
 		}
 
 		window.addEventListener("message", (event) => {
+			if (
+				!event.data ||
+				typeof event.data.action !== "string" ||
+				!event.data.action.startsWith("ANKI_")
+			) {
+				return;
+			}
 			console.log(
 				"[Anki Bridge] 📥 Top Window received message action:",
-				event.data?.action,
+				event.data.action,
 			);
 			if (event.data.action === "ANKI_MINER_READY") {
 				isMinerConnected = true;
@@ -301,11 +328,19 @@
 				updateButtonState("ready");
 			} else if (event.data.action === "ANKI_REAL_SUCCESS") {
 				console.log(
-					"[Anki Bridge] 🎉 Export successful! Count:",
+					`[Anki Bridge] 🎉 Export successful! (v${EXTENSION_VERSION}) Count:`,
 					event.data.count,
 					"Skipped:",
 					event.data.skipped,
 				);
+				if (
+					event.data.mediaLogs &&
+					Array.isArray(event.data.mediaLogs)
+				) {
+					for (const logLine of event.data.mediaLogs) {
+						console.log(`[Anki Media Summary] ${logLine}`);
+					}
+				}
 				isExporting = false;
 				updateButtonState(
 					"success",
@@ -331,7 +366,14 @@
 					event.data.nbTitle,
 					event.data.quizTitle,
 					event.data.topicsCovered,
-				);
+				).catch((err) => {
+					console.error(
+						"[Anki Bridge] ❌ handleExtractedData error:",
+						err,
+					);
+					isExporting = false;
+					updateButtonState("error");
+				});
 			}
 		});
 
@@ -371,9 +413,9 @@
 	 * @param {string} nbTitle - The notebook title.
 	 * @param {string} quizTitle - The quiz artifact title.
 	 * @param {Array<string>} [topicsCovered=[]] - Sanitized topic tags to attach to Anki notes.
-	 * @returns {void}
+	 * @returns {Promise<void>}
 	 */
-	function handleExtractedData(
+	async function handleExtractedData(
 		cards,
 		deckTitle,
 		nbTitle,
@@ -411,6 +453,7 @@
 			return;
 		}
 		isExporting = true;
+		updateButtonState("loading");
 
 		console.log(
 			"[Anki Bridge] 📞 Sending checkDeckExists message to background worker for deck:",
@@ -503,6 +546,11 @@
 				topicsCovered: topicsCovered,
 			},
 			(res) => {
+				if (res?.mediaLogs && Array.isArray(res.mediaLogs)) {
+					for (const logLine of res.mediaLogs) {
+						console.log(`[Anki Background Media] ${logLine}`);
+					}
+				}
 				if (res?.success) {
 					window.top.postMessage(
 						{
@@ -510,6 +558,7 @@
 							count: res.count,
 							deck: deckTitle,
 							skipped: res.skipped,
+							mediaLogs: res.mediaLogs || [],
 						},
 						"*",
 					);
@@ -655,29 +704,8 @@
 			}
 		}
 
-		if (window !== window.top) {
-			try {
-				for (const selector of selectors) {
-					const el = window.top.document.querySelector(selector);
-					if (el) {
-						const val = el.value || el.getAttribute("value");
-						if (
-							val &&
-							val !== "undefined" &&
-							String(val).trim() !== ""
-						) {
-							return String(val).trim();
-						}
-					}
-				}
-			} catch (e) {
-				console.warn(
-					"[Anki Bridge] Could not access top frame DOM for quiz title:",
-					e,
-				);
-			}
-		}
-
+		// Child frames should never attempt to access window.top.document across origins.
+		// Top window executes getQuizTitle directly upon receiving extracted data.
 		return null;
 	}
 

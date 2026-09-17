@@ -15,6 +15,19 @@ document.addEventListener("DOMContentLoaded", () => {
 		"quizDeckNameTemplate",
 	);
 
+	// Populate version identifier dynamically from manifest if available
+	const buildEl = document.getElementById("build-version");
+	if (
+		buildEl &&
+		typeof chrome !== "undefined" &&
+		chrome.runtime?.getManifest
+	) {
+		const manifest = chrome.runtime.getManifest();
+		const versionText =
+			manifest.version_name || manifest.version || "4.1.0";
+		buildEl.textContent = `v${versionText}`;
+	}
+
 	// Load the stored state
 	chrome.storage.local.get(
 		{

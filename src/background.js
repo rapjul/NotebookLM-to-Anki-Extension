@@ -2,6 +2,19 @@
 importScripts("utils.js");
 
 /**
+ * Extension version identifier dynamically read from extension manifest or fallback string.
+ * @type {string}
+ */
+const EXTENSION_VERSION =
+	(typeof chrome !== "undefined" &&
+		chrome.runtime?.getManifest?.()?.version) ||
+	"4.1.0";
+
+self.console.log(
+	`[Anki Background] 🚀 Service Worker v${EXTENSION_VERSION} initialized.`,
+);
+
+/**
  * Toggle for debug logging state, updated asynchronously from local storage.
  * @type {boolean}
  */
@@ -175,13 +188,111 @@ const NOTEBOOKLM_MODEL_FIELDS = [
 ];
 
 /**
- * Processes cards to download any remote media assets into Anki's media collection via storeMediaFile.
- * Returns an updated array of card objects with local img HTML in card.image.
+ * Converts an ArrayBuffer into a Base64-encoded string without memory overflows.
+ * Handles both Node.js (via Buffer) and browser Service Worker (via chunked btoa) environments.
+ *
+ * @param {ArrayBuffer} buffer - Binary data buffer to encode.
+ * @returns {string} Base64-encoded string representation.
+ */
+function arrayBufferToBase64(buffer) {
+	if (typeof Buffer !== "undefined") {
+		return Buffer.from(buffer).toString("base64");
+	}
+	const bytes = new Uint8Array(buffer);
+	const chunkSize = 8192;
+	let binary = "";
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		const chunk = bytes.subarray(i, i + chunkSize);
+		binary += String.fromCharCode.apply(null, chunk);
+	}
+	return btoa(binary);
+}
+
+/**
+ * Detects the image format from the binary magic bytes of an ArrayBuffer.
+ * Rejects HTML, XML, or non-image payloads to prevent storing corrupted assets.
+ *
+ * @param {ArrayBuffer} buffer - Raw binary buffer of the downloaded asset.
+ * @returns {string|null} Image file extension ('png', 'jpg', 'gif', 'webp', 'svg') or null if invalid.
+ */
+function detectImageFormatFromBuffer(buffer) {
+	if (!buffer || buffer.byteLength < 4) return null;
+	const bytes = new Uint8Array(buffer);
+
+	// PNG: 89 50 4E 47
+	if (
+		bytes[0] === 0x89 &&
+		bytes[1] === 0x50 &&
+		bytes[2] === 0x4e &&
+		bytes[3] === 0x47
+	) {
+		return "png";
+	}
+
+	// JPEG: FF D8 FF
+	if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+		return "jpg";
+	}
+
+	// GIF: 47 49 46 38 ('GIF8')
+	if (
+		bytes[0] === 0x47 &&
+		bytes[1] === 0x49 &&
+		bytes[2] === 0x46 &&
+		bytes[3] === 0x38
+	) {
+		return "gif";
+	}
+
+	// WEBP: 52 49 46 46 ... 57 45 42 50 ('RIFF' ... 'WEBP')
+	if (
+		bytes.length >= 12 &&
+		bytes[0] === 0x52 &&
+		bytes[1] === 0x49 &&
+		bytes[2] === 0x46 &&
+		bytes[3] === 0x46 &&
+		bytes[8] === 0x57 &&
+		bytes[9] === 0x45 &&
+		bytes[10] === 0x42 &&
+		bytes[11] === 0x50
+	) {
+		return "webp";
+	}
+
+	// SVG check (text inspection)
+	const sampleLength = Math.min(bytes.length, 256);
+	let textSample = "";
+	for (let i = 0; i < sampleLength; i++) {
+		textSample += String.fromCharCode(bytes[i]);
+	}
+	const lowerSample = textSample.toLowerCase().trim();
+
+	// Reject HTML document declarations immediately
+	if (
+		lowerSample.startsWith("<!doctype") ||
+		lowerSample.startsWith("<html") ||
+		lowerSample.includes("<base href=")
+	) {
+		return null;
+	}
+
+	if (lowerSample.startsWith("<svg") || lowerSample.includes("<svg ")) {
+		return "svg";
+	}
+
+	return null;
+}
+
+/**
+ * Processes cards to persist diagram images into Anki's collection.media folder via storeMediaFile.
+ * Uses pre-resolved Base64 media attached by the top window, or falls back to direct authenticated fetch.
+ * Emits comprehensive mediaLogs for UI feedback.
  *
  * @param {Array<object>} cards - Array of card objects.
- * @returns {Promise<Array<object>>} Cards with local or remote image markup populated.
+ * @param {Array<string>} [mediaLogs=[]] - Diagnostic log collector for reporting back to the UI.
+ * @returns {Promise<Array<object>>} Cards with local or fallback image markup populated.
  */
-async function processCardMedia(cards) {
+async function processCardMedia(cards, mediaLogs = []) {
 	if (!Array.isArray(cards)) return [];
 
 	return Promise.all(
@@ -189,48 +300,188 @@ async function processCardMedia(cards) {
 			if (!card.diagramUrl) return card;
 
 			let localFilename = "";
-			try {
-				const cleanUrl = card.diagramUrl.split("?")[0];
-				const extMatch = cleanUrl.match(/\.(png|jpe?g|webp|gif|svg)$/i);
-				const ext = extMatch ? extMatch[1] : "png";
-				localFilename = `notebooklm_${Date.now()}_${idx}.${ext}`;
+			if (card.imageBase64) {
+				try {
+					const detectedExt = card.imageFormat || "png";
+					localFilename = `notebooklm_${Date.now()}_${idx}.${detectedExt}`;
+					mediaLogs.push(
+						`💾 [Card #${idx + 1}] Found pre-resolved media '${localFilename}' (${card.imageBase64.length} Base64 chars). Persisting via storeMediaFile... Content preview: ${card.imageBase64.substring(0, 60)}...`,
+					);
+					console.log(
+						`[Anki Background] 💾 Persisting pre-resolved media '${localFilename}' (${card.imageBase64.length} Base64 chars) via storeMediaFile... Content preview: ${card.imageBase64.substring(0, 60)}...`,
+					);
 
-				console.log(
-					`[Anki Background] 🖼️ Storing media file ${localFilename} from URL: ${card.diagramUrl}`,
-				);
-				const storeRes = await fetch("http://127.0.0.1:8765", {
-					method: "POST",
-					body: JSON.stringify({
-						action: "storeMediaFile",
-						version: 6,
-						params: {
-							filename: localFilename,
-							url: card.diagramUrl,
-						},
-					}),
-				});
-				const storeData = await storeRes.json();
-				if (storeData.error) {
+					const storeRes = await fetch("http://127.0.0.1:8765", {
+						method: "POST",
+						body: JSON.stringify({
+							action: "storeMediaFile",
+							version: 6,
+							params: {
+								filename: localFilename,
+								data: card.imageBase64,
+							},
+						}),
+					});
+
+					const storeData = await storeRes.json();
+					if (storeData.error) {
+						console.warn(
+							"[Anki Background] storeMediaFile returned error:",
+							storeData.error,
+						);
+						mediaLogs.push(
+							`❌ [Card #${idx + 1}] storeMediaFile returned error: ${storeData.error}`,
+						);
+						localFilename = "";
+					} else {
+						mediaLogs.push(
+							`✅ [Card #${idx + 1}] Successfully persisted pre-resolved '${localFilename}' into Anki collection.media.`,
+						);
+					}
+				} catch (err) {
 					console.warn(
-						"[Anki Background] storeMediaFile returned error, falling back to direct URL:",
-						storeData.error,
+						`[Anki Background] ⚠️ Failed to persist pre-resolved media for question "${card.question?.substring(0, 40)}...":`,
+						err,
+					);
+					mediaLogs.push(
+						`❌ [Card #${idx + 1}] Exception persisting pre-resolved media: ${err.message}`,
 					);
 					localFilename = "";
 				}
-			} catch (err) {
-				console.warn(
-					"[Anki Background] Failed to download media via AnkiConnect:",
-					err,
-				);
-				localFilename = "";
+			} else {
+				try {
+					mediaLogs.push(
+						`🖼️ [Card #${idx + 1}] Fetching diagram media: ${card.diagramUrl}`,
+					);
+					console.log(
+						`[Anki Background] 🖼️ Fetching diagram media from: ${card.diagramUrl}`,
+					);
+
+					const imgRes = await fetch(card.diagramUrl, {
+						credentials: "include",
+					});
+
+					const contentType = imgRes.headers?.get
+						? imgRes.headers.get("content-type")
+						: "unknown";
+					mediaLogs.push(
+						`📥 [Card #${idx + 1}] HTTP ${imgRes.status} ${imgRes.statusText} (Redirected: ${imgRes.redirected ? imgRes.url : "no"}, Content-Type: ${contentType})`,
+					);
+
+					if (
+						imgRes.redirected &&
+						(imgRes.url.includes("accounts.google.com") ||
+							imgRes.url.includes("signin"))
+					) {
+						mediaLogs.push(
+							`⚠️ [Card #${idx + 1}] Redirected to Google sign-in page: ${imgRes.url}. Authentication cookies missing or unaccepted.`,
+						);
+						throw new Error(
+							"Redirected to Google sign-in page (authentication required).",
+						);
+					}
+
+					if (!imgRes.ok) {
+						mediaLogs.push(
+							`❌ [Card #${idx + 1}] HTTP request failed with status ${imgRes.status}: ${imgRes.statusText}`,
+						);
+						throw new Error(
+							`HTTP ${imgRes.status} ${imgRes.statusText}`,
+						);
+					}
+
+					const buffer = await imgRes.arrayBuffer();
+					if (!buffer || buffer.byteLength === 0) {
+						mediaLogs.push(
+							`❌ [Card #${idx + 1}] Downloaded image buffer is empty (0 bytes).`,
+						);
+						throw new Error(
+							"Downloaded image buffer is empty (0 bytes).",
+						);
+					}
+
+					mediaLogs.push(
+						`📦 [Card #${idx + 1}] Received ${buffer.byteLength} bytes binary payload.`,
+					);
+
+					const detectedExt = detectImageFormatFromBuffer(buffer);
+					if (!detectedExt) {
+						const snippet = buffer
+							? Array.from(new Uint8Array(buffer.slice(0, 20)))
+									.map((b) => b.toString(16).padStart(2, "0"))
+									.join(" ")
+							: "none";
+						mediaLogs.push(
+							`⚠️ [Card #${idx + 1}] Buffer is not a recognized image format. Hex: ${snippet}`,
+						);
+						throw new Error(
+							"Downloaded content is not a valid image format (HTML or unrecognized binary signature).",
+						);
+					}
+
+					localFilename = `notebooklm_${Date.now()}_${idx}.${detectedExt}`;
+					const base64Data = arrayBufferToBase64(buffer);
+
+					mediaLogs.push(
+						`✨ [Card #${idx + 1}] Valid image format: ${detectedExt.toUpperCase()}. Base64 preview: ${base64Data.substring(0, 60)}...`,
+					);
+					console.log(
+						`[Anki Background] 💾 Persisting media file '${localFilename}' (${buffer.byteLength} bytes) via storeMediaFile... Content preview: ${base64Data.substring(0, 60)}...`,
+					);
+
+					const storeRes = await fetch("http://127.0.0.1:8765", {
+						method: "POST",
+						body: JSON.stringify({
+							action: "storeMediaFile",
+							version: 6,
+							params: {
+								filename: localFilename,
+								data: base64Data,
+							},
+						}),
+					});
+
+					const storeData = await storeRes.json();
+					if (storeData.error) {
+						console.warn(
+							"[Anki Background] storeMediaFile returned error:",
+							storeData.error,
+						);
+						mediaLogs.push(
+							`❌ [Card #${idx + 1}] storeMediaFile returned error: ${storeData.error}`,
+						);
+						localFilename = "";
+					} else {
+						mediaLogs.push(
+							`✅ [Card #${idx + 1}] Successfully stored '${localFilename}' in Anki collection.media.`,
+						);
+					}
+				} catch (err) {
+					console.warn(
+						`[Anki Background] ⚠️ Failed to download diagram for question "${card.question?.substring(0, 40)}...":`,
+						err,
+					);
+					mediaLogs.push(
+						`⚠️ [Card #${idx + 1}] Failed to download diagram: ${err.message}`,
+					);
+					localFilename = "";
+				}
 			}
 
-			const imgSrc = localFilename || card.diagramUrl;
-			const altAttr = card.diagramAlt ? ` alt="${card.diagramAlt}"` : "";
-			const captionHtml = card.diagramCaption
-				? `<div class="diagram-caption">${card.diagramCaption}</div>`
-				: "";
-			const imageFieldHtml = `<img src="${imgSrc}"${altAttr}>${captionHtml}`;
+			let imageFieldHtml = "";
+			if (localFilename) {
+				const altText = card.diagramAlt || "";
+				const escapedAlt = altText.replace(/"/g, "&quot;");
+				const altAttr = altText ? ` alt="${escapedAlt}"` : "";
+				const titleAttr = altText ? ` title="${escapedAlt}"` : "";
+				const captionHtml = card.diagramCaption
+					? `<div class="diagram-caption">${card.diagramCaption}</div>`
+					: "";
+				imageFieldHtml = `<img src="${localFilename}"${altAttr}${titleAttr}>${captionHtml}`;
+			} else if (card.diagramCaption || card.diagramAlt) {
+				const captionText = card.diagramCaption || card.diagramAlt;
+				imageFieldHtml = `<div class="diagram-placeholder"><span class="diagram-error-badge">⚠️ Diagram unavailable</span><div class="diagram-caption">${captionText}</div></div>`;
+			}
 
 			return {
 				...card,
@@ -317,8 +568,13 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			throw new Error(deckData.error);
 		}
 
+		const mediaLogs = [];
+
 		// 4. Download media assets to Anki media collection
-		const processedCards = await processCardMedia(request.batchData || []);
+		const processedCards = await processCardMedia(
+			request.batchData || [],
+			mediaLogs,
+		);
 
 		// 5. Map cards to Anki note objects with topic tags
 		const notes = NotebookLMToAnkiUtils.mapCardsToAnkiNotes(
@@ -437,6 +693,7 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			sendResponse({
 				success: false,
 				error: `Anki Error: ${addData.error}`,
+				mediaLogs: mediaLogs,
 			});
 			return;
 		}
@@ -455,12 +712,14 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			success: true,
 			count: successCount,
 			skipped: skippedCount,
+			mediaLogs: mediaLogs,
 		});
 	} catch (err) {
 		console.error("[Anki Background] ❌ AnkiConnect Action Failed", err);
 		sendResponse({
 			success: false,
 			error: `Anki Error: ${err.message}`,
+			mediaLogs: typeof mediaLogs !== "undefined" ? mediaLogs : [],
 		});
 	}
 }
@@ -593,7 +852,7 @@ async function ensureNotebookLMModelExists() {
 			// Update templates and styling
 			const [frontHtml, backHtml, stylingCss] =
 				await loadLocalTemplates();
-			await fetch("http://127.0.0.1:8765", {
+			const tmplRes = await fetch("http://127.0.0.1:8765", {
 				method: "POST",
 				body: JSON.stringify({
 					action: "updateModelTemplates",
@@ -610,9 +869,16 @@ async function ensureNotebookLMModelExists() {
 						},
 					},
 				}),
-			}).catch(() => {});
+			});
+			const tmplData = await tmplRes.json();
+			if (tmplData.error) {
+				console.warn(
+					"[Anki Background] ⚠️ updateModelTemplates error:",
+					tmplData.error,
+				);
+			}
 
-			await fetch("http://127.0.0.1:8765", {
+			const styleRes = await fetch("http://127.0.0.1:8765", {
 				method: "POST",
 				body: JSON.stringify({
 					action: "updateModelStyling",
@@ -624,7 +890,14 @@ async function ensureNotebookLMModelExists() {
 						},
 					},
 				}),
-			}).catch(() => {});
+			});
+			const styleData = await styleRes.json();
+			if (styleData.error) {
+				console.warn(
+					"[Anki Background] ⚠️ updateModelStyling error:",
+					styleData.error,
+				);
+			}
 		} catch (err) {
 			console.warn(
 				"[Anki Background] Non-critical error during model schema check or template update:",
