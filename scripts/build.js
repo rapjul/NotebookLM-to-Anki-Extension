@@ -100,8 +100,9 @@ async function buildChrome(version) {
 
 /**
  * Packages the Firefox extension archive with Gecko-specific manifest settings.
+ * Generates both .zip and .xpi distribution archives.
  * @param {string} version - Semantic version string of the extension.
- * @returns {Promise<string>} Path to the created ZIP archive.
+ * @returns {Promise<{ zipPath: string, xpiPath: string }>} Paths to the created ZIP and XPI archives.
  */
 async function buildFirefox(version) {
 	const filename = `notebooklm-to-anki-v${version}-firefox.zip`;
@@ -170,7 +171,12 @@ async function buildFirefox(version) {
 	// Clean up temporary staging directory
 	fs.rmSync(FIREFOX_STAGING_DIR, { recursive: true, force: true });
 
-	return buildResult.extensionPath;
+	// Create .xpi copy for direct Firefox installation
+	const xpiFilename = `notebooklm-to-anki-v${version}-firefox.xpi`;
+	const xpiPath = path.join(DIST_DIR, xpiFilename);
+	fs.copyFileSync(buildResult.extensionPath, xpiPath);
+
+	return { zipPath: buildResult.extensionPath, xpiPath };
 }
 
 /**
@@ -220,12 +226,18 @@ async function main() {
 	}
 
 	if (target === "all" || target === "firefox" || target === "gecko") {
-		const firefoxPath = await buildFirefox(version);
+		const { zipPath, xpiPath } = await buildFirefox(version);
 		createdArtifacts.push({
-			browser: "Firefox (Gecko)",
-			path: firefoxPath,
-			file: path.basename(firefoxPath),
-			size: getFileSizeKb(firefoxPath),
+			browser: "Firefox (Gecko Zip)",
+			path: zipPath,
+			file: path.basename(zipPath),
+			size: getFileSizeKb(zipPath),
+		});
+		createdArtifacts.push({
+			browser: "Firefox (Gecko XPI)",
+			path: xpiPath,
+			file: path.basename(xpiPath),
+			size: getFileSizeKb(xpiPath),
 		});
 	}
 
