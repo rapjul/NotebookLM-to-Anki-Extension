@@ -774,6 +774,20 @@ export function createMockDOM(options = {}) {
 	/**
 	 * Mock MutationObserver class.
 	 */
+	class MockDOMParser {
+		/**
+		 * Parses HTML markup string.
+		 * @param {string} markup - HTML string.
+		 * @param {string} [type="text/html"] - MIME type.
+		 * @returns {object} Document object with body element.
+		 */
+		parseFromString(markup, type = "text/html") {
+			const body = new MockElement("body");
+			body.innerHTML = markup;
+			return { body };
+		}
+	}
+
 	class MockMutationObserver {
 		/**
 		 * Creates a MutationObserver.
@@ -969,6 +983,7 @@ export function createMockDOM(options = {}) {
 		window: win,
 		document: doc,
 		MutationObserver: MockMutationObserver,
+		DOMParser: MockDOMParser,
 	};
 }
 
@@ -1029,8 +1044,8 @@ export function createMockChrome(initialStorage = {}) {
 		 * @returns {{ version: string, version_name: string, name: string, manifest_version: number }} Mock manifest.
 		 */
 		getManifest: () => ({
-			version: "4.1.0",
-			version_name: "4.1.0",
+			version: "4.0.0",
+			version_name: "4.0.0",
 			name: "NotebookLM to Anki",
 			manifest_version: 3,
 		}),

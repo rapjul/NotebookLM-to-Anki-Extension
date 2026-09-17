@@ -60,6 +60,7 @@ const mockFetch = createMockFetch();
 globalThis.window = mockDOM.window;
 globalThis.document = mockDOM.document;
 globalThis.MutationObserver = mockDOM.MutationObserver;
+globalThis.DOMParser = mockDOM.DOMParser;
 globalThis.chrome = mockChrome;
 globalThis.fetch = mockFetch;
 globalThis.alert = (msg) => mockDOM.window.alert(msg);

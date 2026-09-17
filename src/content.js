@@ -8,7 +8,7 @@
 	const EXTENSION_VERSION =
 		(typeof chrome !== "undefined" &&
 			chrome.runtime?.getManifest?.()?.version) ||
-		"4.1.0";
+		"4.0.0";
 
 	window.console.log(
 		`[Anki Bridge] 🚀 NotebookLM to Anki Extension v${EXTENSION_VERSION} loaded.`,
@@ -297,11 +297,14 @@
 			const modalHtml = await modalRes.text();
 			console.log("[Anki Bridge] ✅ modal.html loaded.");
 
-			const div = document.createElement("div");
-			div.innerHTML = modalHtml;
+			/** @type {Document} */
+			const modalDoc = new DOMParser().parseFromString(
+				modalHtml,
+				"text/html",
+			);
 			// Append all template nodes from the fetched HTML
-			while (div.firstChild) {
-				document.body.appendChild(div.firstChild);
+			while (modalDoc.body.firstChild) {
+				document.body.appendChild(modalDoc.body.firstChild);
 			}
 			console.log("[Anki Bridge] 🏗️ Modal templates appended to body.");
 		} catch (e) {
@@ -715,9 +718,12 @@
 	 * @returns {HTMLElement} The created button element.
 	 */
 	function createAngularCloneButton() {
-		const tempDiv = document.createElement("div");
-		tempDiv.innerHTML = buttonTemplate;
-		const btn = tempDiv.firstElementChild;
+		/** @type {Document} */
+		const btnDoc = new DOMParser().parseFromString(
+			buttonTemplate,
+			"text/html",
+		);
+		const btn = btnDoc.body.firstElementChild;
 
 		btn.onclick = (e) => {
 			e.preventDefault();
