@@ -911,6 +911,44 @@ test("background: media downloading and embedding", async (t) => {
 			return baseMockFetch(url, options);
 		}
 
+		if (url.startsWith("https://lh3.googleusercontent.com/")) {
+			if (url.includes("fail")) {
+				return {
+					ok: false,
+					status: 404,
+					statusText: "Not Found",
+					headers: { get: () => "text/plain" },
+					arrayBuffer: async () => new Uint8Array([]).buffer,
+				};
+			}
+			if (url.includes("html-redirect")) {
+				const encoder = new TextEncoder();
+				return {
+					ok: true,
+					status: 200,
+					statusText: "OK",
+					redirected: true,
+					url: "https://accounts.google.com/v3/signin/",
+					headers: { get: () => "text/html" },
+					arrayBuffer: async () =>
+						encoder.encode(
+							'<!doctype html><html lang="en"><head><base href="https://accounts.google.com/v3/signin/">',
+						).buffer,
+				};
+			}
+			return {
+				ok: true,
+				status: 200,
+				statusText: "OK",
+				headers: {
+					get: (h) =>
+						h.toLowerCase() === "content-type" ? "image/png" : null,
+				},
+				arrayBuffer: async () =>
+					new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]).buffer,
+			};
+		}
+
 		const parsed = JSON.parse(options.body);
 		ankiCalls.push(parsed);
 
@@ -960,7 +998,7 @@ test("background: media downloading and embedding", async (t) => {
 	};
 
 	await t.test(
-		"downloads diagramUrl via storeMediaFile and embeds local img HTML with caption",
+		"downloads diagramUrl in browser, converts to base64, and persists via storeMediaFile",
 		async () => {
 			const cardWithMedia = {
 				question: "What does this circuit diagram depict?",
@@ -988,9 +1026,9 @@ test("background: media downloading and embedding", async (t) => {
 				(c) => c.action === "storeMediaFile",
 			);
 			assert.ok(mediaCall, "storeMediaFile should have been called");
-			assert.equal(
-				mediaCall.params.url,
-				"https://lh3.googleusercontent.com/test-circuit-symbol.png",
+			assert.ok(
+				mediaCall.params.data,
+				"storeMediaFile should receive base64 encoded data",
 			);
 			assert.ok(
 				mediaCall.params.filename.startsWith("notebooklm_"),
@@ -1002,7 +1040,7 @@ test("background: media downloading and embedding", async (t) => {
 			const note = addNotesCall.params.notes[0];
 			assert.ok(
 				note.fields.Image.includes(
-					`<img src="${mediaCall.params.filename}" alt="Circuit Diagram">`,
+					`<img src="${mediaCall.params.filename}" alt="Circuit Diagram" title="Circuit Diagram">`,
 				),
 			);
 			assert.ok(
@@ -1013,6 +1051,171 @@ test("background: media downloading and embedding", async (t) => {
 			assert.ok(
 				note.tags.includes("Circuits"),
 				"Topic tags should be included in note",
+			);
+		},
+	);
+
+	await t.test(
+		"handles image download failure gracefully by inserting placeholder and completing export",
+		async () => {
+			const cardWithFailedMedia = {
+				question: "What is depicted in this missing diagram?",
+				hint: "Inspect caption",
+				diagramUrl:
+					"https://lh3.googleusercontent.com/fail-circuit.png",
+				diagramAlt: "Missing Circuit",
+				diagramCaption: "Figure 2.1 Missing Schematic",
+				option1: "Resistor",
+				flag1: "True",
+				rationale1: "A standard resistor",
+			};
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "FailedMediaDeck",
+				duplicateAction: "increment",
+				batchData: [cardWithFailedMedia],
+			});
+
+			assert.equal(response.success, true);
+
+			const addNotesCall = ankiCalls.find(
+				(c) =>
+					c.action === "addNotes" &&
+					c.params.notes[0].fields.Question.includes(
+						"missing diagram",
+					),
+			);
+			assert.ok(addNotesCall, "addNotes should have been called");
+			const note = addNotesCall.params.notes[0];
+			assert.ok(
+				note.fields.Image.includes("diagram-placeholder"),
+				"Image field should contain diagram-placeholder",
+			);
+			assert.ok(
+				note.fields.Image.includes("Diagram unavailable"),
+				"Image field should contain error notice",
+			);
+			assert.ok(
+				note.fields.Image.includes("Figure 2.1 Missing Schematic"),
+				"Image field should preserve caption text",
+			);
+		},
+	);
+
+	await t.test(
+		"rejects HTML sign-in redirect payload even if HTTP 200, inserting placeholder instead of saving HTML file",
+		async () => {
+			const cardWithHtmlMedia = {
+				question: "What is depicted in this html-redirect diagram?",
+				hint: "Check schematic",
+				diagramUrl:
+					"https://lh3.googleusercontent.com/html-redirect-diagram.png",
+				diagramAlt: "Circuit Diagram",
+				diagramCaption: "Figure 3.1 Schematic",
+				option1: "Capacitor",
+				flag1: "True",
+				rationale1: "A standard capacitor",
+			};
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "HtmlRedirectDeck",
+				duplicateAction: "increment",
+				batchData: [cardWithHtmlMedia],
+			});
+
+			assert.equal(response.success, true);
+
+			// Verify storeMediaFile was NOT called with HTML payload
+			const storeMediaCall = ankiCalls.find(
+				(c) =>
+					c.action === "storeMediaFile" &&
+					c.params.filename.includes("html-redirect"),
+			);
+			assert.equal(
+				storeMediaCall,
+				undefined,
+				"storeMediaFile should NOT be called for HTML payloads",
+			);
+
+			const addNotesCall = ankiCalls.find(
+				(c) =>
+					c.action === "addNotes" &&
+					c.params.notes[0].fields.Question.includes("html-redirect"),
+			);
+			assert.ok(addNotesCall, "addNotes should have been called");
+			const note = addNotesCall.params.notes[0];
+			assert.ok(
+				note.fields.Image.includes("diagram-placeholder"),
+				"Image field should contain diagram-placeholder",
+			);
+			assert.ok(
+				note.fields.Image.includes("Diagram unavailable"),
+				"Image field should contain error notice",
+			);
+			assert.ok(
+				note.fields.Image.includes("Figure 3.1 Schematic"),
+				"Image field should preserve caption text",
+			);
+		},
+	);
+
+	await t.test(
+		"persists pre-resolved imageBase64 directly via storeMediaFile without fetching network",
+		async () => {
+			const cardWithPreResolvedMedia = {
+				question: "What does this pre-resolved diagram depict?",
+				hint: "Check polarity",
+				diagramUrl:
+					"https://lh3.googleusercontent.com/test-circuit-topwindow.png",
+				imageBase64:
+					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+				imageFormat: "png",
+				diagramAlt: "Pre-resolved Circuit Diagram",
+				diagramCaption: "Figure 4.1 Schematic",
+				option1: "Current Source",
+				flag1: "True",
+				rationale1: "Polarity indicates current",
+			};
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "PreResolvedDeck",
+				duplicateAction: "increment",
+				batchData: [cardWithPreResolvedMedia],
+				topicsCovered: ["Circuits"],
+			});
+
+			assert.equal(response.success, true);
+
+			const mediaCall = ankiCalls.find(
+				(c) =>
+					c.action === "storeMediaFile" &&
+					c.params.data === cardWithPreResolvedMedia.imageBase64,
+			);
+			assert.ok(
+				mediaCall,
+				"storeMediaFile should have been called with pre-resolved Base64 data",
+			);
+			assert.ok(
+				mediaCall.params.filename.endsWith(".png"),
+				"filename should end with .png detected format",
+			);
+
+			const addNotesCall = ankiCalls.find(
+				(c) =>
+					c.action === "addNotes" &&
+					c.params.notes[0].fields.Question.includes(
+						"pre-resolved diagram depict",
+					),
+			);
+			assert.ok(addNotesCall, "addNotes should have been called");
+			const note = addNotesCall.params.notes[0];
+			assert.ok(
+				note.fields.Image.includes(
+					`<img src="${mediaCall.params.filename}" alt="Pre-resolved Circuit Diagram" title="Pre-resolved Circuit Diagram">`,
+				),
 			);
 		},
 	);

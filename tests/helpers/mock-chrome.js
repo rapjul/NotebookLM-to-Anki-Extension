@@ -938,6 +938,8 @@ export function createMockDOM(options = {}) {
 				listener(event);
 			}
 		},
+		btoa: (str) => Buffer.from(str, "binary").toString("base64"),
+		atob: (str) => Buffer.from(str, "base64").toString("binary"),
 	};
 
 	if (options.isIframe) {
@@ -1021,6 +1023,17 @@ export function createMockChrome(initialStorage = {}) {
 		 */
 		getURL: (assetPath) =>
 			`chrome-extension://mock-extension-id/${assetPath}`,
+		/**
+		 * Returns a mock extension manifest object with version metadata.
+		 *
+		 * @returns {{ version: string, version_name: string, name: string, manifest_version: number }} Mock manifest.
+		 */
+		getManifest: () => ({
+			version: "4.1.0",
+			version_name: "4.1.0",
+			name: "NotebookLM to Anki",
+			manifest_version: 3,
+		}),
 	};
 
 	return {
@@ -1113,6 +1126,45 @@ export function createMockChrome(initialStorage = {}) {
 			 */
 			injections: scriptInjections,
 		},
+		cookies: {
+			/**
+			 * Queries mock cookies matching filter criteria.
+			 * @param {object} details - Filter criteria.
+			 * @returns {Promise<Array<object>>} Array of mock cookie objects.
+			 */
+			getAll: async (details) => {
+				return [
+					{ name: "SID", value: "mock_sid_cookie" },
+					{ name: "HSID", value: "mock_hsid_cookie" },
+				];
+			},
+		},
+		declarativeNetRequest: {
+			/**
+			 * Mock session rules array.
+			 * @type {Array<object>}
+			 */
+			sessionRules: [],
+			/**
+			 * Updates dynamic or session rules.
+			 * @param {object} options - Options containing removeRuleIds and addRules.
+			 * @returns {Promise<void>}
+			 */
+			updateSessionRules: async (options) => {
+				if (Array.isArray(options?.addRules)) {
+					chrome.declarativeNetRequest.sessionRules.push(
+						...options.addRules,
+					);
+				}
+			},
+			updateDynamicRules: async (options) => {
+				if (Array.isArray(options?.addRules)) {
+					chrome.declarativeNetRequest.sessionRules.push(
+						...options.addRules,
+					);
+				}
+			},
+		},
 	};
 }
 
@@ -1184,6 +1236,23 @@ export function createMockFetch(customResponder) {
 			};
 		}
 
+		if (
+			urlStr.startsWith("https://lh3.googleusercontent.com/") ||
+			urlStr.startsWith("https://lh3.google.com/")
+		) {
+			const pngBytes = new Uint8Array([
+				0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00,
+				0x00, 0x0d,
+			]);
+			return {
+				ok: true,
+				status: 200,
+				arrayBuffer: async () => pngBytes.buffer,
+				text: async () => "",
+				json: async () => ({}),
+			};
+		}
+
 		if (customResponder) {
 			return customResponder(urlStr, options);
 		}
@@ -1193,6 +1262,7 @@ export function createMockFetch(customResponder) {
 			status: 200,
 			json: async () => ({ result: null, error: null }),
 			text: async () => "",
+			arrayBuffer: async () => new ArrayBuffer(0),
 		};
 	};
 }

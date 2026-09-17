@@ -799,3 +799,78 @@ test("content: notebook and quiz title DOM extraction fallbacks", async (t) => {
 		},
 	);
 });
+
+test("content: extracted cards batch dispatch", async (t) => {
+	await t.test(
+		"handleExtractedData forwards cards with diagramUrl directly to background worker via sendBatchToAnki",
+		async () => {
+			mockDOM.window.postMessage({
+				action: "ANKI_REAL_SUCCESS",
+				count: 0,
+			});
+			/** @type {Array<object>} */
+			const sentMessages = [];
+
+			mockChrome.runtime.onMessage.listeners = [
+				/**
+				 * Mock runtime message handler for checking deck and handling batch export.
+				 * @param {object} msg - Incoming runtime message.
+				 * @param {object} sender - Message sender metadata.
+				 * @param {function(object): void} sendResponse - Response callback.
+				 * @returns {boolean} True for asynchronous response.
+				 */
+				(msg, sender, sendResponse) => {
+					sentMessages.push(msg);
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({ success: true, count: 1, skipped: 0 });
+						return true;
+					}
+				},
+			];
+
+			mockDOM.window.postMessage({
+				action: "ANKI_EXTRACTED_DATA",
+				cards: [
+					{
+						question: "What is this circuit element?",
+						diagramUrl:
+							"https://lh3.googleusercontent.com/test-circuit-topwindow.png",
+						diagramAlt: "Voltage Source Diagram",
+					},
+				],
+				deckTitle: "NotebookLM::EE::Quizzes::Circuits",
+				nbTitle: "EE",
+				quizTitle: "Circuits",
+			});
+
+			await new Promise((resolve) => {
+				/**
+				 * Polling checker waiting for sendBatchToAnki message to be dispatched.
+				 * @returns {void}
+				 */
+				const check = () => {
+					const sendMsg = sentMessages.find(
+						(m) => m.action === "sendBatchToAnki",
+					);
+					if (sendMsg) {
+						assert.equal(sendMsg.batchData.length, 1);
+						const card = sendMsg.batchData[0];
+						assert.equal(
+							card.diagramUrl,
+							"https://lh3.googleusercontent.com/test-circuit-topwindow.png",
+						);
+						assert.equal(card.diagramAlt, "Voltage Source Diagram");
+						resolve();
+					} else {
+						setTimeout(check, 10);
+					}
+				};
+				check();
+			});
+		},
+	);
+});
