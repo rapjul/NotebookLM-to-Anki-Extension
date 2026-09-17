@@ -2,16 +2,19 @@
 importScripts("utils.js");
 
 /**
- * Extension version identifier dynamically read from extension manifest or fallback string.
+ * Extension version identifier dynamically read from extension manifest at runtime.
  * @type {string}
  */
 const EXTENSION_VERSION =
 	(typeof chrome !== "undefined" &&
-		chrome.runtime?.getManifest?.()?.version) ||
-	"4.1.0";
+		(chrome.runtime?.getManifest?.()?.version_name ||
+			chrome.runtime?.getManifest?.()?.version)) ||
+	"";
 
 self.console.log(
-	`[Anki Background] 🚀 Service Worker v${EXTENSION_VERSION} initialized.`,
+	EXTENSION_VERSION
+		? `[Anki Background] 🚀 Service Worker v${EXTENSION_VERSION} initialized.`
+		: `[Anki Background] 🚀 Service Worker initialized.`,
 );
 
 /**

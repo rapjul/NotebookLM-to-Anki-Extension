@@ -23,9 +23,10 @@ document.addEventListener("DOMContentLoaded", () => {
 		chrome.runtime?.getManifest
 	) {
 		const manifest = chrome.runtime.getManifest();
-		const versionText =
-			manifest.version_name || manifest.version || "4.1.0";
-		buildEl.textContent = `v${versionText}`;
+		const versionText = manifest?.version_name || manifest?.version;
+		if (versionText) {
+			buildEl.textContent = `v${versionText}`;
+		}
 	}
 
 	// Load the stored state

@@ -2,16 +2,19 @@
 
 (() => {
 	/**
-	 * Extension version identifier dynamically read from extension manifest or fallback.
+	 * Extension version identifier dynamically read from extension manifest at runtime.
 	 * @type {string}
 	 */
 	const EXTENSION_VERSION =
 		(typeof chrome !== "undefined" &&
-			chrome.runtime?.getManifest?.()?.version) ||
-		"4.0.0";
+			(chrome.runtime?.getManifest?.()?.version_name ||
+				chrome.runtime?.getManifest?.()?.version)) ||
+		"";
 
 	window.console.log(
-		`[Anki Bridge] 🚀 NotebookLM to Anki Extension v${EXTENSION_VERSION} loaded.`,
+		EXTENSION_VERSION
+			? `[Anki Bridge] 🚀 NotebookLM to Anki Extension v${EXTENSION_VERSION} loaded.`
+			: `[Anki Bridge] 🚀 NotebookLM to Anki Extension loaded.`,
 	);
 
 	/**

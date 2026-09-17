@@ -193,7 +193,10 @@ async function main() {
 	const target = targetArg ? targetArg.split("=")[1].toLowerCase() : "all";
 
 	const manifest = getSourceManifest();
-	const version = manifest.version || "4.0.0";
+	const version = manifest.version;
+	if (!version) {
+		throw new Error("Missing 'version' in src/manifest.json");
+	}
 
 	if (!fs.existsSync(DIST_DIR)) {
 		fs.mkdirSync(DIST_DIR, { recursive: true });
