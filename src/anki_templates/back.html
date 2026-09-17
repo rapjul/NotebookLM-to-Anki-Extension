@@ -6,9 +6,7 @@
 			<!-- Inline Question Image / Diagram -->
 			{{#Image}}
 			<div class="question-media" id="back-q-media">{{Image}}</div>
-			{{/Image}} {{^Image}} {{#ArchDiagram}}
-			<div class="question-media" id="back-q-media">{{ArchDiagram}}</div>
-			{{/ArchDiagram}} {{/Image}}
+			{{/Image}}
 
 			<!-- Dynamic Feedback & Results Area -->
 			<div id="back-interactive-area">
@@ -25,9 +23,7 @@
 	<div id="d-question">{{Question}}</div>
 	{{#Image}}
 	<div id="d-image">{{Image}}</div>
-	{{/Image}} {{^Image}} {{#ArchDiagram}}
-	<div id="d-image">{{ArchDiagram}}</div>
-	{{/ArchDiagram}} {{/Image}}
+	{{/Image}}
 	<div id="d-qtype">{{QuestionType}}</div>
 	<div id="d-target">{{TargetAnswer}}</div>
 	<div id="d-acceptable">{{AcceptableAnswers}}</div>
@@ -79,7 +75,9 @@
 					const isInteractive =
 						e.target.closest(".option-block") ||
 						e.target.closest(".fitb-input") ||
-						e.target.closest(".sa-scratchpad");
+						e.target.closest(".sa-scratchpad") ||
+						e.target.closest(".question-media img") ||
+						e.target.closest(".diagram-alt-description");
 					if (isInteractive) {
 						e.stopPropagation();
 					} else {
@@ -113,6 +111,20 @@
 			s = s.replace(
 				/`([^`]+)`/g,
 				'<code class="latex-snippet">$1</code>',
+			);
+
+			// Prevent line breaks before/after narrow inline math (e.g. orphan closing parentheses)
+			s = s.replace(
+				/\(\s*(\\\([^\n]+?\\\))\s*\)/g,
+				'<span class="math-nowrap">($1)</span>',
+			);
+			s = s.replace(
+				/(\\\([^\n]{1,30}?\\\))([)\],.;:!?])/g,
+				'<span class="math-nowrap">$1$2</span>',
+			);
+			s = s.replace(
+				/([(\[{])(\\\([^\n]{1,30}?\\\))/g,
+				'<span class="math-nowrap">$1$2</span>',
 			);
 			return s;
 		}
@@ -200,6 +212,51 @@
 				if (imgRaw && imgRaw.length > 0) {
 					mediaBox.innerHTML = imgRaw;
 					mediaBox.style.display = "block";
+
+					const imgEl = mediaBox.querySelector("img");
+					if (imgEl && imgEl.alt && imgEl.alt.trim()) {
+						const descBox = document.createElement("div");
+						descBox.className = "diagram-alt-description";
+
+						const labelSpan = document.createElement("span");
+						labelSpan.className = "diagram-alt-label";
+						labelSpan.textContent = "Description: ";
+						descBox.appendChild(labelSpan);
+
+						const textSpan = document.createElement("span");
+						textSpan.textContent = imgEl.alt.trim();
+						descBox.appendChild(textSpan);
+
+						mediaBox.appendChild(descBox);
+
+						imgEl.setAttribute("tabindex", "0");
+						imgEl.setAttribute("role", "button");
+						imgEl.setAttribute("aria-expanded", "false");
+
+						/**
+						 * Toggles visibility of the diagram alt text description box.
+						 *
+						 * @param {Event} evt - Click or keydown event.
+						 * @returns {void}
+						 */
+						const toggleDesc = (evt) => {
+							evt.stopPropagation();
+							const isShown = descBox.style.display === "block";
+							descBox.style.display = isShown ? "none" : "block";
+							imgEl.setAttribute(
+								"aria-expanded",
+								String(!isShown),
+							);
+						};
+
+						imgEl.addEventListener("click", toggleDesc);
+						imgEl.addEventListener("keydown", (evt) => {
+							if (evt.key === "Enter" || evt.key === " ") {
+								evt.preventDefault();
+								toggleDesc(evt);
+							}
+						});
+					}
 				} else {
 					mediaBox.style.display = "none";
 				}
@@ -253,11 +310,15 @@
 			// --- MULTIPLE SELECT FEEDBACK ---
 			if (questionType === "MULTIPLE_SELECT") {
 				let selectedOpts = [];
+				let hasInteraction = false;
 				try {
 					const stored = sessionStorage.getItem(
 						"notebooklm_ms_sel_" + cardId,
 					);
-					if (stored) selectedOpts = JSON.parse(stored);
+					if (stored !== null) {
+						selectedOpts = JSON.parse(stored);
+						hasInteraction = true;
+					}
 					sessionStorage.removeItem("notebooklm_ms_sel_" + cardId);
 				} catch (e) {}
 
@@ -279,14 +340,28 @@
 				}).length;
 
 				const isFullyCorrect =
-					correctSelected === totalCorrect && wrongSelected === 0;
+					hasInteraction &&
+					correctSelected === totalCorrect &&
+					wrongSelected === 0;
 
-				interactiveArea.innerHTML = `
+				const pillHtml = hasInteraction
+					? `
 					<div class="score-pill-container">
 						<div class="score-pill ${isFullyCorrect ? "pill-correct" : "pill-wrong"}">
 							${correctSelected}/${totalCorrect} Correct
 						</div>
 					</div>
+				`
+					: `
+					<div class="score-pill-container">
+						<div class="score-pill pill-correct">
+							Select all that apply (${totalCorrect} correct)
+						</div>
+					</div>
+				`;
+
+				interactiveArea.innerHTML = `
+					${pillHtml}
 					<div class="options-list" id="back-options"></div>
 				`;
 
@@ -325,38 +400,58 @@
 						flagStr === "true" ||
 						flagStr === "yes" ||
 						flagStr === "1";
-					const userSelected = selectedOpts.includes(originalLetter);
+					const userSelected =
+						hasInteraction && selectedOpts.includes(originalLetter);
 
 					const block = document.createElement("div");
 					block.className = "option-block";
 
-					if (isCorrect) {
-						block.classList.add("state-correct");
-					} else if (userSelected) {
-						block.classList.add("state-wrong");
-					} else {
-						block.classList.add("state-dimmed");
-					}
-
-					const badgeHtml = userSelected
-						? '<span class="your-answer-badge">· Your answer</span>'
-						: "";
-
 					let headerHtml = "";
-					if (isCorrect) {
-						headerHtml = `<div class="thats-right">${iconCheck} Correct option</div>`;
-					} else if (userSelected) {
-						headerHtml = `<div class="not-quite">${iconClose} Incorrect selection</div>`;
+					let badgeHtml = "";
+
+					if (hasInteraction) {
+						if (isCorrect && userSelected) {
+							block.classList.add("state-correct");
+							headerHtml = `<div class="thats-right" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Correct selection</span></div>`;
+							badgeHtml =
+								'<span class="your-answer-badge">· Your answer</span>';
+						} else if (isCorrect && !userSelected) {
+							block.classList.add("state-missed");
+							headerHtml = `<div class="thats-missed" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Missed correct option</span></div>`;
+							badgeHtml =
+								'<span class="missed-badge">· Missed</span>';
+						} else if (!isCorrect && userSelected) {
+							block.classList.add("state-wrong");
+							headerHtml = `<div class="not-quite" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect selection</span></div>`;
+							badgeHtml =
+								'<span class="your-answer-badge">· Your answer</span>';
+						} else {
+							block.classList.add("state-incorrect-unselected");
+							headerHtml = `<div class="thats-incorrect-unselected" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect option</span></div>`;
+						}
+					} else {
+						// Non-interactive preview or card browser view
+						if (isCorrect) {
+							block.classList.add("state-correct");
+							headerHtml = `<div class="thats-right" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Correct option</span></div>`;
+						} else {
+							block.classList.add("state-incorrect-unselected");
+							headerHtml = `<div class="thats-incorrect-unselected" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect option</span></div>`;
+						}
 					}
 
-					const feedbackHtml = reason.trim()
-						? `
+					const rationaleContent = reason.trim()
+						? `<div class="rationale-text">${reason}</div>`
+						: "";
+					const feedbackHtml =
+						headerHtml || rationaleContent
+							? `
 						<div class="feedback-section" style="display:block;">
 							${headerHtml}
-							<div class="rationale-text">${reason}</div>
+							${rationaleContent}
 						</div>
 					`
-						: "";
+							: "";
 
 					block.innerHTML = `
 						<div class="option-content">
@@ -476,14 +571,67 @@
 				`
 					: "";
 
-				const rubricHtml = rubric
-					? `
+				// Parse rubric into interactive checklist items and misconceptions
+				const rubricLines = rubric
+					.split("\n")
+					.map((l) => l.trim())
+					.filter(Boolean);
+				const checkItems = [];
+				const miscItems = [];
+				const otherItems = [];
+
+				for (const line of rubricLines) {
+					if (line.startsWith("•") || line.startsWith("-")) {
+						const cleaned = line.replace(/^[•\-]\s*/, "");
+						checkItems.push(cleaned);
+					} else if (line.startsWith("⚠️")) {
+						const cleaned = line.replace(/^⚠️\s*/, "");
+						miscItems.push(cleaned);
+					} else {
+						otherItems.push(line);
+					}
+				}
+
+				let rubricContentHtml = "";
+				if (checkItems.length > 0) {
+					rubricContentHtml += `
+						<div class="rubric-checklist">
+							${checkItems
+								.map(
+									(item, idx) => `
+								<label class="rubric-item" id="rubric-item-${idx}">
+									<input type="checkbox" class="rubric-checkbox" data-idx="${idx}" />
+									<span class="rubric-text">${cleanMath(item)}</span>
+								</label>
+							`,
+								)
+								.join("")}
+						</div>
+					`;
+				}
+				if (otherItems.length > 0) {
+					rubricContentHtml += `<div class="rubric-text" style="margin-top:8px;">${cleanMath(otherItems.join("<br>"))}</div>`;
+				}
+
+				const rubricHtml =
+					checkItems.length > 0 || otherItems.length > 0
+						? `
 					<div class="sa-rubric">
 						<div class="sa-section-title">Grading Rubric & Key Points</div>
-						<div class="sa-rubric-content">${cleanMath(rubric).replace(/\n/g, "<br>")}</div>
+						${rubricContentHtml}
 					</div>
 				`
-					: "";
+						: "";
+
+				const miscHtml =
+					miscItems.length > 0
+						? `
+					<div class="sa-misconceptions">
+						<div class="sa-misconceptions-heading">⚠️ Common Pitfalls & Misconceptions</div>
+						<div class="sa-misconceptions-body">${cleanMath(miscItems.join("<br>"))}</div>
+					</div>
+				`
+						: "";
 
 				const rationaleHtml = generalRationale
 					? `
@@ -495,7 +643,27 @@
 					: "";
 
 				interactiveArea.innerHTML =
-					scratchHtml + modelAnswerHtml + rubricHtml + rationaleHtml;
+					scratchHtml +
+					modelAnswerHtml +
+					rubricHtml +
+					miscHtml +
+					rationaleHtml;
+
+				// Attach interactive checkbox listeners
+				const checkBoxes =
+					interactiveArea.querySelectorAll(".rubric-checkbox");
+				checkBoxes.forEach((cb) => {
+					cb.addEventListener("change", () => {
+						const parent = cb.closest(".rubric-item");
+						if (parent) {
+							if (cb.checked) {
+								parent.classList.add("rubric-checked");
+							} else {
+								parent.classList.remove("rubric-checked");
+							}
+						}
+					});
+				});
 
 				// Self-Grade Action Buttons
 				const actionContainer =
@@ -511,12 +679,35 @@
 						</div>
 					`;
 
+					/**
+					 * Keyboard shortcut listener for rapid self-grading.
+					 *
+					 * @param {KeyboardEvent} e - Keydown event.
+					 * @returns {void}
+					 */
+					const onSaKeyDown = (e) => {
+						if (e.key === "1") {
+							window.removeEventListener("keydown", onSaKeyDown);
+							gradeCard(false);
+						} else if (e.key === "3" || e.code === "Space") {
+							window.removeEventListener("keydown", onSaKeyDown);
+							gradeCard(true);
+						}
+					};
+					window.addEventListener("keydown", onSaKeyDown);
+
 					document
 						.getElementById("sa-btn-again")
-						?.addEventListener("click", () => gradeCard(false));
+						?.addEventListener("click", () => {
+							window.removeEventListener("keydown", onSaKeyDown);
+							gradeCard(false);
+						});
 					document
 						.getElementById("sa-btn-good")
-						?.addEventListener("click", () => gradeCard(true));
+						?.addEventListener("click", () => {
+							window.removeEventListener("keydown", onSaKeyDown);
+							gradeCard(true);
+						});
 				}
 			} else {
 				// --- MULTIPLE CHOICE FEEDBACK ---

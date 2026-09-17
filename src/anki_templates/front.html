@@ -11,9 +11,7 @@
 			<!-- Inline Question Image / Diagram -->
 			{{#Image}}
 			<div class="question-media" id="q-media">{{Image}}</div>
-			{{/Image}} {{^Image}} {{#ArchDiagram}}
-			<div class="question-media" id="q-media">{{ArchDiagram}}</div>
-			{{/ArchDiagram}} {{/Image}}
+			{{/Image}}
 
 			<!-- Dynamic Question Interface Container -->
 			<div id="front-interactive-area">
@@ -44,9 +42,7 @@
 	<div id="d-hint">{{Hint}}</div>
 	{{#Image}}
 	<div id="d-image">{{Image}}</div>
-	{{/Image}} {{^Image}} {{#ArchDiagram}}
-	<div id="d-image">{{ArchDiagram}}</div>
-	{{/ArchDiagram}} {{/Image}}
+	{{/Image}}
 	<div id="d-qtype">{{QuestionType}}</div>
 	<div id="d-target">{{TargetAnswer}}</div>
 	<div id="d-acceptable">{{AcceptableAnswers}}</div>
@@ -97,7 +93,9 @@
 					e.target.closest("#hint-toggle") ||
 					e.target.closest(".submit-btn") ||
 					e.target.closest(".fitb-input") ||
-					e.target.closest(".sa-scratchpad"));
+					e.target.closest(".sa-scratchpad") ||
+					e.target.closest(".question-media img") ||
+					e.target.closest(".diagram-alt-description"));
 			if (!isInteractive) {
 				e.stopPropagation();
 				if (e.cancelable) e.preventDefault();
@@ -124,6 +122,20 @@
 			s = s.replace(
 				/`([^`]+)`/g,
 				'<code class="latex-snippet">$1</code>',
+			);
+
+			// Prevent line breaks before/after narrow inline math (e.g. orphan closing parentheses)
+			s = s.replace(
+				/\(\s*(\\\([^\n]+?\\\))\s*\)/g,
+				'<span class="math-nowrap">($1)</span>',
+			);
+			s = s.replace(
+				/(\\\([^\n]{1,30}?\\\))([)\],.;:!?])/g,
+				'<span class="math-nowrap">$1$2</span>',
+			);
+			s = s.replace(
+				/([(\[{])(\\\([^\n]{1,30}?\\\))/g,
+				'<span class="math-nowrap">$1$2</span>',
 			);
 			return s;
 		}
@@ -179,6 +191,51 @@
 				if (imgRaw && imgRaw.length > 0) {
 					mediaBox.innerHTML = imgRaw;
 					mediaBox.style.display = "block";
+
+					const imgEl = mediaBox.querySelector("img");
+					if (imgEl && imgEl.alt && imgEl.alt.trim()) {
+						const descBox = document.createElement("div");
+						descBox.className = "diagram-alt-description";
+
+						const labelSpan = document.createElement("span");
+						labelSpan.className = "diagram-alt-label";
+						labelSpan.textContent = "Description: ";
+						descBox.appendChild(labelSpan);
+
+						const textSpan = document.createElement("span");
+						textSpan.textContent = imgEl.alt.trim();
+						descBox.appendChild(textSpan);
+
+						mediaBox.appendChild(descBox);
+
+						imgEl.setAttribute("tabindex", "0");
+						imgEl.setAttribute("role", "button");
+						imgEl.setAttribute("aria-expanded", "false");
+
+						/**
+						 * Toggles visibility of the diagram alt text description box.
+						 *
+						 * @param {Event} evt - Click or keydown event.
+						 * @returns {void}
+						 */
+						const toggleDesc = (evt) => {
+							evt.stopPropagation();
+							const isShown = descBox.style.display === "block";
+							descBox.style.display = isShown ? "none" : "block";
+							imgEl.setAttribute(
+								"aria-expanded",
+								String(!isShown),
+							);
+						};
+
+						imgEl.addEventListener("click", toggleDesc);
+						imgEl.addEventListener("keydown", (evt) => {
+							if (evt.key === "Enter" || evt.key === " ") {
+								evt.preventDefault();
+								toggleDesc(evt);
+							}
+						});
+					}
 				} else {
 					mediaBox.style.display = "none";
 				}

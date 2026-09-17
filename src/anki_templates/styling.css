@@ -129,6 +129,25 @@ body {
   border-radius: 8px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   display: inline-block;
+  cursor: pointer;
+  transition:
+    filter 0.2s ease,
+    transform 0.15s ease;
+}
+
+@media (hover: hover) {
+  .question-media img:hover {
+    filter: brightness(1.05);
+  }
+}
+
+.question-media img:active {
+  transform: scale(0.99);
+}
+
+.question-media img:focus-visible {
+  outline: 2px solid #a8c7fa;
+  outline-offset: 2px;
 }
 
 .diagram-caption {
@@ -137,6 +156,26 @@ body {
   margin-top: 8px;
   font-style: italic;
   text-align: center;
+}
+
+.diagram-alt-description {
+  display: none;
+  margin: 10px auto 0 auto;
+  max-width: 90%;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: #bdc1c6;
+  background: #1e1f22;
+  border: 1px solid #3c4043;
+  border-radius: 6px;
+  padding: 8px 12px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.diagram-alt-label {
+  font-weight: 600;
+  color: #a8c7fa;
 }
 
 .hint-container {
@@ -483,6 +522,103 @@ body {
   font-size: 0.95rem;
 }
 
+.rubric-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rubric-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid #3c4043;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.rubric-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: #5f6368;
+}
+
+.rubric-item.rubric-checked {
+  background-color: rgba(129, 201, 149, 0.1);
+  border-color: #81c995;
+}
+
+.rubric-checkbox {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #9aa0a6;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 0;
+  position: relative;
+  background: transparent;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.rubric-checkbox:checked {
+  background-color: #81c995;
+  border-color: #81c995;
+}
+
+.rubric-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 4px;
+  height: 9px;
+  border: solid #121212;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.rubric-text {
+  color: #e3e3e3;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+.sa-misconceptions {
+  background-color: #2c251e;
+  border: 1px solid #f9ab00;
+  border-left: 4px solid #f9ab00;
+  border-radius: 0 8px 8px 0;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.sa-misconceptions-heading {
+  color: #f9ab00;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sa-misconceptions-body {
+  color: #fce8e6;
+  font-size: 0.95rem;
+}
+
 .self-grade-container {
   margin-top: 25px;
   text-align: center;
@@ -518,6 +654,18 @@ body {
   opacity: 0.5;
 }
 
+.state-missed {
+  border-color: #81c995 !important;
+  background-color: rgba(129, 201, 149, 0.08) !important;
+  border-style: dashed !important;
+}
+
+.state-incorrect-unselected {
+  border-color: #3c4043 !important;
+  background-color: #242424 !important;
+  opacity: 0.8;
+}
+
 .feedback-section {
   display: none;
   padding-top: 8px;
@@ -532,15 +680,51 @@ body {
   gap: 10px;
   font-size: 1.1rem;
   margin-bottom: 8px;
+  white-space: nowrap !important;
+}
+
+.thats-missed {
+  color: #81c995;
+  font-weight: bold;
+  display: flex !important;
+  align-items: center !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+  white-space: nowrap !important;
+}
+
+.thats-incorrect-unselected {
+  color: #9aa0a6;
+  font-weight: 600;
+  display: flex !important;
+  align-items: center !important;
+  flex-direction: row !important;
+  gap: 10px !important;
+  font-size: 1rem;
+  margin-bottom: 8px;
+  white-space: nowrap !important;
+}
+
+.missed-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #81c995;
+  margin-left: 8px;
 }
 
 .not-quite {
   color: #f28b82;
   font-weight: bold;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: flex !important;
+  align-items: center !important;
+  flex-direction: row !important;
+  gap: 10px !important;
   font-size: 1.1rem;
+  margin-bottom: 8px;
+  white-space: nowrap !important;
 }
 
 .rationale-text {
@@ -549,16 +733,39 @@ body {
   line-height: 1.6;
 }
 
+.diagram-placeholder {
+  padding: 12px 16px;
+  background-color: #252525;
+  border: 1px dashed #5f6368;
+  border-radius: 8px;
+  display: inline-block;
+  max-width: 90%;
+}
+
+.diagram-error-badge {
+  font-size: 0.85rem;
+  color: #f28b82;
+  display: block;
+  font-weight: 500;
+}
+
 /* 5. SVG STATUS ICONS */
 .status-icon {
   width: 24px;
   height: 24px;
   min-width: 24px;
   fill: currentColor;
-  display: block;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
-/* 6. LATEX CODE SNIPPET STYLING */
+/* 6. MATH & CODE SNIPPET STYLING */
+.math-nowrap,
+mjx-container:not([display="true"]) {
+  display: inline-block !important;
+  white-space: nowrap !important;
+}
+
 .latex-snippet {
   background-color: #383838;
   color: #e6b455;
