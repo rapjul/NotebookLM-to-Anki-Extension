@@ -5,7 +5,11 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createMockChrome, createMockDOM } from "../helpers/mock-chrome.js";
+import {
+	createMockChrome,
+	createMockDOM,
+	flushPromises,
+} from "../helpers/mock-chrome.js";
 
 /**
  * Helper to build the required popup HTML elements in a mock DOM.
@@ -59,8 +63,9 @@ test("popup: initialization and user interactions", async (t) => {
 
 	await t.test(
 		"DOMContentLoaded populates deck template and debug status enabled",
-		() => {
+		async () => {
 			mockDOM.document.dispatchEvent({ type: "DOMContentLoaded" });
+			await flushPromises();
 
 			assert.equal(
 				elements.quizDeckNameTemplate.value,
@@ -78,13 +83,14 @@ test("popup: initialization and user interactions", async (t) => {
 
 	await t.test(
 		"input on quizDeckNameTemplate persists changes to storage",
-		() => {
+		async () => {
 			const customTemplate = "CustomDeck::{quizName}";
 			elements.quizDeckNameTemplate.value = customTemplate;
 			elements.quizDeckNameTemplate.dispatchEvent({
 				type: "input",
 				target: { value: customTemplate },
 			});
+			await flushPromises();
 
 			mockChrome.storage.local.get("quizDeckNameTemplate", (res) => {
 				assert.equal(res.quizDeckNameTemplate, customTemplate);
@@ -94,9 +100,10 @@ test("popup: initialization and user interactions", async (t) => {
 
 	await t.test(
 		"toggleDebug button flips logging state and updates UI",
-		() => {
+		async () => {
 			// First toggle: Enabled -> Disabled
 			elements.toggleDebug.click();
+			await flushPromises();
 
 			assert.equal(elements.debugStatus.textContent, "Disabled");
 			assert.equal(elements.debugStatus.className, "status-disabled");
@@ -112,6 +119,7 @@ test("popup: initialization and user interactions", async (t) => {
 
 			// Second toggle: Disabled -> Enabled
 			elements.toggleDebug.click();
+			await flushPromises();
 
 			assert.equal(elements.debugStatus.textContent, "Enabled");
 			assert.equal(elements.debugStatus.className, "status-enabled");

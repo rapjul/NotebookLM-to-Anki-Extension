@@ -988,6 +988,18 @@ export function createMockDOM(options = {}) {
 }
 
 /**
+ * Flushes all pending microtasks and macrotasks in the Node.js event loop.
+ *
+ * @param {number} [iterations=3] - Number of event loop turns to cycle.
+ * @returns {Promise<void>}
+ */
+export async function flushPromises(iterations = 3) {
+	for (let i = 0; i < iterations; i++) {
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+}
+
+/**
  * Creates an in-memory mock implementation of the Chrome extension APIs.
  *
  * @param {Record<string, *>} [initialStorage={}] - Initial key-value pairs for local storage.
@@ -1016,20 +1028,47 @@ export function createMockChrome(initialStorage = {}) {
 			listeners: messageListeners,
 		},
 		/**
-		 * Sends a message across extension scripts.
+		 * Sends a message across extension scripts. Returns a Promise if callback is omitted.
+		 *
 		 * @param {object} message - Message payload.
 		 * @param {function(object): void} [callback] - Response callback.
-		 * @returns {void}
+		 * @returns {Promise<any>|void} Promise resolving to response or void if callback passed.
 		 */
 		sendMessage: (message, callback) => {
-			for (const listener of runtime.onMessage.listeners) {
-				const handled = listener(
-					message,
-					{ id: "mock-sender" },
-					callback || (() => {}),
-				);
-				if (handled) return;
+			if (typeof callback === "function") {
+				for (const listener of runtime.onMessage.listeners) {
+					const handled = listener(
+						message,
+						{ id: "mock-sender" },
+						callback,
+					);
+					if (handled) return;
+				}
+				return;
 			}
+			return new Promise((resolve, reject) => {
+				let handled = false;
+				for (const listener of runtime.onMessage.listeners) {
+					const isHandled = listener(
+						message,
+						{ id: "mock-sender" },
+						(response) => {
+							resolve(response);
+						},
+					);
+					if (isHandled) {
+						handled = true;
+						return;
+					}
+				}
+				if (!handled) {
+					reject(
+						new Error(
+							"Could not establish connection. Receiving end does not exist.",
+						),
+					);
+				}
+			});
 		},
 		/**
 		 * Resolves extension asset path to a mock URL.
@@ -1054,6 +1093,13 @@ export function createMockChrome(initialStorage = {}) {
 	return {
 		storage: {
 			local: {
+				/**
+				 * Retrieves items from local storage. Returns a Promise if callback is omitted.
+				 *
+				 * @param {string|Array<string>|Record<string, *>|null} [keys] - Keys to retrieve.
+				 * @param {function(Record<string, *>): void} [callback] - Callback invoked with results.
+				 * @returns {Promise<Record<string, *>>|void} Promise or void if callback passed.
+				 */
 				get: (keys, callback) => {
 					let result = {};
 					if (typeof keys === "string") {
@@ -1074,23 +1120,42 @@ export function createMockChrome(initialStorage = {}) {
 					} else {
 						result = { ...storageData };
 					}
-					callback(result);
-				},
-				set: (items, callback) => {
-					const changes = {};
-					for (const [key, value] of Object.entries(items)) {
-						changes[key] = {
-							oldValue: storageData[key],
-							newValue: value,
-						};
-						storageData[key] = value;
-					}
-					for (const listener of storageListeners) {
-						listener(changes, "local");
-					}
 					if (typeof callback === "function") {
-						callback();
+						callback(result);
+						return;
 					}
+					return Promise.resolve(result);
+				},
+				/**
+				 * Persists items in local storage. Returns a Promise if callback is omitted.
+				 *
+				 * @param {Record<string, *>} items - Key-value pairs to store.
+				 * @param {function(): void} [callback] - Callback invoked on completion.
+				 * @returns {Promise<void>|void} Promise or void if callback passed.
+				 */
+				set: (items, callback) => {
+					const persist = () => {
+						const changes = {};
+						for (const [key, value] of Object.entries(items)) {
+							changes[key] = {
+								oldValue: storageData[key],
+								newValue: value,
+							};
+							storageData[key] = value;
+						}
+						for (const listener of storageListeners) {
+							listener(changes, "local");
+						}
+					};
+
+					if (typeof callback === "function") {
+						queueMicrotask(() => {
+							persist();
+							callback();
+						});
+						return;
+					}
+					return Promise.resolve().then(persist);
 				},
 			},
 			onChanged: {

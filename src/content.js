@@ -30,17 +30,23 @@
 		"NotebookLM::{notebookName}::Quizzes::{quizName}";
 
 	// Load configuration setting from storage.
-	chrome.storage.local.get(
-		{
+	chrome.storage.local
+		.get({
 			enableDebugLogging: true,
 			quizDeckNameTemplate:
 				"NotebookLM::{notebookName}::Quizzes::{quizName}",
-		},
-		(res) => {
-			enableDebug = res.enableDebugLogging;
-			quizDeckNameTemplate = res.quizDeckNameTemplate;
-		},
-	);
+		})
+		.then((res) => {
+			if (res) {
+				if (typeof res.enableDebugLogging === "boolean") {
+					enableDebug = res.enableDebugLogging;
+				}
+				if (res.quizDeckNameTemplate) {
+					quizDeckNameTemplate = res.quizDeckNameTemplate;
+				}
+			}
+		})
+		.catch(() => {});
 
 	// Listen for settings changes to update status dynamically.
 	chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -465,120 +471,137 @@
 			"[Anki Bridge] 📞 Sending checkDeckExists message to background worker for deck:",
 			finalDeckTitle,
 		);
-		chrome.runtime.sendMessage(
-			{ action: "checkDeckExists", deckName: finalDeckTitle },
-			(res) => {
-				console.log("[Anki Bridge] 📞 checkDeckExists response:", res);
-				if (!res?.success) {
-					console.error(
-						"[Anki Bridge] ❌ checkDeckExists query failed:",
-						res ? res.error : "No response object",
-					);
-					window.top.postMessage(
-						{
-							action: "ANKI_REAL_FAIL",
-							error: res
-								? res.error
-								: "Unknown Error checking deck",
-						},
-						"*",
-					);
-					return;
-				}
+		let res;
+		try {
+			res = await chrome.runtime.sendMessage({
+				action: "checkDeckExists",
+				deckName: finalDeckTitle,
+			});
+		} catch (err) {
+			console.error("[Anki Bridge] ❌ checkDeckExists query threw:", err);
+			res = {
+				success: false,
+				error: err?.message || "Connection Failed",
+			};
+		}
 
-				if (res.exists) {
+		console.log("[Anki Bridge] 📞 checkDeckExists response:", res);
+		if (!res?.success) {
+			console.error(
+				"[Anki Bridge] ❌ checkDeckExists query failed:",
+				res ? res.error : "No response object",
+			);
+			window.top.postMessage(
+				{
+					action: "ANKI_REAL_FAIL",
+					error: res ? res.error : "Unknown Error checking deck",
+				},
+				"*",
+			);
+			return;
+		}
+
+		if (res.exists) {
+			console.log(
+				"[Anki Bridge] ⚠️ Deck already exists. Showing duplicate resolution modal.",
+			);
+			showDuplicateModal(
+				finalDeckTitle,
+				(userAction, resolvedDeckTitle) => {
 					console.log(
-						"[Anki Bridge] ⚠️ Deck already exists. Showing duplicate resolution modal.",
+						"[Anki Bridge] 👤 User resolved duplicate modal with action:",
+						userAction,
+						"Deck:",
+						resolvedDeckTitle,
 					);
-					showDuplicateModal(
-						finalDeckTitle,
-						(userAction, resolvedDeckTitle) => {
-							console.log(
-								"[Anki Bridge] 👤 User resolved duplicate modal with action:",
-								userAction,
-								"Deck:",
-								resolvedDeckTitle,
-							);
-							if (userAction === "cancel") {
-								isExporting = false;
-								updateButtonState("ready");
-								return;
-							}
-							sendBatchToAnkiBackground(
-								cards,
-								resolvedDeckTitle,
-								userAction,
-								topicsCovered,
-							);
-						},
-					);
-				} else {
-					console.log(
-						"[Anki Bridge] 🆕 Deck does not exist. Proceeding with export.",
-					);
-					// Default if not exists
+					if (userAction === "cancel") {
+						isExporting = false;
+						updateButtonState("ready");
+						return;
+					}
 					sendBatchToAnkiBackground(
 						cards,
-						finalDeckTitle,
-						"merge",
+						resolvedDeckTitle,
+						userAction,
 						topicsCovered,
 					);
-				}
-			},
-		);
+				},
+			);
+		} else {
+			console.log(
+				"[Anki Bridge] 🆕 Deck does not exist. Proceeding with export.",
+			);
+			// Default if not exists
+			sendBatchToAnkiBackground(
+				cards,
+				finalDeckTitle,
+				"merge",
+				topicsCovered,
+			);
+		}
 	}
 
 	/**
 	 * Sends the batch of cards to the background script to perform the actual
 	 * import/creation of the deck in Anki.
+	 *
 	 * @param {Object[]} cards - Array of card objects.
 	 * @param {string} deckTitle - The title of the deck.
 	 * @param {string} duplicateAction - Resolution strategy ("merge", "increment", "overwrite").
 	 * @param {Array<string>} [topicsCovered=[]] - Array of sanitized topic tags.
-	 * @returns {void}
+	 * @returns {Promise<void>}
 	 */
-	function sendBatchToAnkiBackground(
+	async function sendBatchToAnkiBackground(
 		cards,
 		deckTitle,
 		duplicateAction,
 		topicsCovered = [],
 	) {
-		chrome.runtime.sendMessage(
-			{
+		let res;
+		try {
+			res = await chrome.runtime.sendMessage({
 				action: "sendBatchToAnki",
 				batchData: cards,
 				deckTitle: deckTitle,
 				duplicateAction: duplicateAction,
 				topicsCovered: topicsCovered,
-			},
-			(res) => {
-				if (res?.mediaLogs && Array.isArray(res.mediaLogs)) {
-					for (const logLine of res.mediaLogs) {
-						console.log(`[Anki Background Media] ${logLine}`);
-					}
-				}
-				if (res?.success) {
-					window.top.postMessage(
-						{
-							action: "ANKI_REAL_SUCCESS",
-							count: res.count,
-							deck: deckTitle,
-							skipped: res.skipped,
-							mediaLogs: res.mediaLogs || [],
-						},
-						"*",
-					);
-				} else {
-					window.top.postMessage(
-						{
-							action: "ANKI_REAL_FAIL",
-							error: res ? res.error : "Unknown Error",
-						},
-						"*",
-					);
-				}
-			},
-		);
+			});
+		} catch (err) {
+			console.error(
+				"[Anki Bridge] ❌ sendBatchToAnki runtime message threw:",
+				err,
+			);
+			res = {
+				success: false,
+				error: err?.message || "Connection Failed",
+			};
+		}
+
+		if (res?.mediaLogs && Array.isArray(res.mediaLogs)) {
+			for (const logLine of res.mediaLogs) {
+				console.log(`[Anki Background Media] ${logLine}`);
+			}
+		}
+		if (res?.success) {
+			window.top.postMessage(
+				{
+					action: "ANKI_REAL_SUCCESS",
+					count: res.count,
+					deck: deckTitle,
+					skipped: res.skipped,
+					mediaLogs: res.mediaLogs || [],
+				},
+				"*",
+			);
+		} else {
+			window.top.postMessage(
+				{
+					action: "ANKI_REAL_FAIL",
+					error: res ? res.error : "Unknown Error",
+				},
+				"*",
+			);
+		}
 	}
 
 	/**
@@ -728,7 +751,7 @@
 		);
 		const btn = btnDoc.body.firstElementChild;
 
-		btn.onclick = (e) => {
+		btn.onclick = async (e) => {
 			e.preventDefault();
 			e.stopPropagation();
 			if (!isMinerConnected) {
@@ -737,40 +760,51 @@
 			}
 
 			// Pre-flight check
-			chrome.runtime.sendMessage({ action: "checkAnkiStatus" }, (res) => {
-				if (!res?.success) {
-					alert("⚠️ AnkiConnect not found! Is Anki running?");
+			let res;
+			try {
+				res = await chrome.runtime.sendMessage({
+					action: "checkAnkiStatus",
+				});
+			} catch (err) {
+				console.error(
+					"[Anki Bridge] ❌ checkAnkiStatus pre-flight check threw:",
+					err,
+				);
+				res = { success: false };
+			}
+
+			if (!res?.success) {
+				alert("⚠️ AnkiConnect not found! Is Anki running?");
+				return;
+			}
+
+			btn.classList.remove(
+				"notebooklm-to-anki-btn-ready",
+				"notebooklm-to-anki-btn-success",
+				"notebooklm-to-anki-btn-error",
+			);
+			btn.classList.add("notebooklm-to-anki-btn-extracting");
+			const labelText = btn.querySelector(
+				".notebooklm-to-anki-btn-label span:last-child",
+			);
+			if (labelText) labelText.innerText = "Extracting...";
+			let deckName = getNotebookTitle();
+			if (!deckName) {
+				deckName = prompt("Enter Notebook Name:");
+				if (!deckName) {
+					updateButtonState("ready");
 					return;
 				}
-
-				btn.classList.remove(
-					"notebooklm-to-anki-btn-ready",
-					"notebooklm-to-anki-btn-success",
-					"notebooklm-to-anki-btn-error",
+			}
+			const iframes = document.querySelectorAll("iframe");
+			iframes.forEach((iframe) => {
+				iframe.contentWindow.postMessage(
+					{
+						action: "ANKI_TRIGGER_EXTRACT",
+						notebookTitle: deckName,
+					},
+					"*",
 				);
-				btn.classList.add("notebooklm-to-anki-btn-extracting");
-				const labelText = btn.querySelector(
-					".notebooklm-to-anki-btn-label span:last-child",
-				);
-				if (labelText) labelText.innerText = "Extracting...";
-				let deckName = getNotebookTitle();
-				if (!deckName) {
-					deckName = prompt("Enter Notebook Name:");
-					if (!deckName) {
-						updateButtonState("ready");
-						return;
-					}
-				}
-				const iframes = document.querySelectorAll("iframe");
-				iframes.forEach((iframe) => {
-					iframe.contentWindow.postMessage(
-						{
-							action: "ANKI_TRIGGER_EXTRACT",
-							notebookTitle: deckName,
-						},
-						"*",
-					);
-				});
 			});
 		};
 		return btn;

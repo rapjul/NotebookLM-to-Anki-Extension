@@ -1,7 +1,7 @@
 /**
  * Initializes the popup UI, loads stored user settings, and attaches event listeners.
  */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
 	/** @type {HTMLButtonElement|null} */
 	const btn = document.getElementById("sendToAnki");
 	/** @type {HTMLElement|null} */
@@ -30,28 +30,36 @@ document.addEventListener("DOMContentLoaded", () => {
 	}
 
 	// Load the stored state
-	chrome.storage.local.get(
-		{
+	try {
+		const res = await chrome.storage.local.get({
 			enableDebugLogging: true,
 			quizDeckNameTemplate:
 				"NotebookLM::{notebookName}::Quizzes::{quizName}",
-		},
-		(res) => {
+		});
+		if (res) {
 			updateDebugUi(res.enableDebugLogging);
-			if (deckNameTemplateInput) {
+			if (deckNameTemplateInput && res.quizDeckNameTemplate) {
 				deckNameTemplateInput.value = res.quizDeckNameTemplate;
 			}
-		},
-	);
+		}
+	} catch (e) {
+		console.error("Failed to load settings from storage:", e);
+	}
 
 	/**
 	 * Handles changes to the deck name template input field by persisting to storage.
 	 *
 	 * @param {Event} e - Input event containing updated value.
-	 * @returns {void}
+	 * @returns {Promise<void>}
 	 */
-	const handleTemplateInput = (e) => {
-		chrome.storage.local.set({ quizDeckNameTemplate: e.target.value });
+	const handleTemplateInput = async (e) => {
+		try {
+			await chrome.storage.local.set({
+				quizDeckNameTemplate: e.target.value,
+			});
+		} catch (err) {
+			console.error("Failed to persist deck name template:", err);
+		}
 	};
 
 	// Save template changes
@@ -88,15 +96,19 @@ document.addEventListener("DOMContentLoaded", () => {
 	/**
 	 * Toggles debug logging on and off in chrome.storage.local and refreshes the popup UI.
 	 *
-	 * @returns {void}
+	 * @returns {Promise<void>}
 	 */
-	const handleToggleDebugClick = () => {
-		chrome.storage.local.get({ enableDebugLogging: true }, (res) => {
-			const newValue = !res.enableDebugLogging;
-			chrome.storage.local.set({ enableDebugLogging: newValue }, () => {
-				updateDebugUi(newValue);
+	const handleToggleDebugClick = async () => {
+		try {
+			const res = await chrome.storage.local.get({
+				enableDebugLogging: true,
 			});
-		});
+			const newValue = !res.enableDebugLogging;
+			await chrome.storage.local.set({ enableDebugLogging: newValue });
+			updateDebugUi(newValue);
+		} catch (err) {
+			console.error("Failed to toggle debug logging:", err);
+		}
 	};
 
 	if (toggleDebugBtn) {
