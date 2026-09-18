@@ -24,9 +24,14 @@ self.console.log(
 let enableDebug = true;
 
 // Load configuration setting from storage.
-chrome.storage.local.get({ enableDebugLogging: true }, (res) => {
-	enableDebug = res.enableDebugLogging;
-});
+chrome.storage.local
+	.get({ enableDebugLogging: true })
+	.then((res) => {
+		if (res && typeof res.enableDebugLogging === "boolean") {
+			enableDebug = res.enableDebugLogging;
+		}
+	})
+	.catch(() => {});
 
 // Listen for settings changes to update status dynamically.
 chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -58,6 +63,12 @@ const console = {
 /**
  * Listens for incoming messages from the content script or popup.
  *
+ * NOTE: In Chromium MV3, an onMessage listener function must NOT be declared async
+ * (e.g. `addListener(async (msg, sender, sendResponse) => ...)`). Returning a Promise
+ * from the listener does not keep the message port open in Chrome and causes sendResponse
+ * to fail silently. The listener will remain a synchronous function returning boolean true,
+ * delegating the async operations to an internal immediately-invoked async function.
+ *
  * @param {object} request - The message sender sent.
  * @param {chrome.runtime.MessageSender} sender - Details about the script context that sent the message.
  * @param {function} sendResponse - Function to call to send a response back.
@@ -73,28 +84,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 	// Checks Anki status.
 	if (request.action === "checkAnkiStatus") {
-		console.log(
-			"[Anki Background] 🔍 Checking AnkiConnect status at http://127.0.0.1:8765...",
-		);
-		fetch("http://127.0.0.1:8765", {
-			method: "POST",
-			body: JSON.stringify({ action: "version", version: 6 }),
-		})
-			.then((response) => {
+		(async () => {
+			console.log(
+				"[Anki Background] 🔍 Checking AnkiConnect status at http://127.0.0.1:8765...",
+			);
+			try {
+				const response = await fetch("http://127.0.0.1:8765", {
+					method: "POST",
+					body: JSON.stringify({ action: "version", version: 6 }),
+				});
 				console.log(
 					"[Anki Background] 📥 checkAnkiStatus HTTP response status:",
 					response.status,
 				);
-				return response.json();
-			})
-			.then((data) => {
+				const data = await response.json();
 				console.log(
 					"[Anki Background] 📥 checkAnkiStatus data response:",
 					data,
 				);
 				sendResponse({ success: true, version: data });
-			})
-			.catch((err) => {
+			} catch (err) {
 				console.error(
 					"[Anki Background] ❌ checkAnkiStatus error:",
 					err,
@@ -103,28 +112,28 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					success: false,
 					error: "Connection Failed: Is Anki open?",
 				});
-			});
+			}
+		})();
 		return true;
 	}
 
 	// Checks if a deck exists in Anki.
 	if (request.action === "checkDeckExists") {
-		console.log(
-			"[Anki Background] 🔍 Checking if deck exists:",
-			request.deckName,
-		);
-		fetch("http://127.0.0.1:8765", {
-			method: "POST",
-			body: JSON.stringify({ action: "deckNames", version: 6 }),
-		})
-			.then((response) => {
+		(async () => {
+			console.log(
+				"[Anki Background] 🔍 Checking if deck exists:",
+				request.deckName,
+			);
+			try {
+				const response = await fetch("http://127.0.0.1:8765", {
+					method: "POST",
+					body: JSON.stringify({ action: "deckNames", version: 6 }),
+				});
 				console.log(
 					"[Anki Background] 📥 checkDeckExists HTTP response status:",
 					response.status,
 				);
-				return response.json();
-			})
-			.then((data) => {
+				const data = await response.json();
 				console.log(
 					"[Anki Background] 📥 checkDeckExists deckNames retrieved:",
 					data,
@@ -145,14 +154,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 					);
 					sendResponse({ success: true, exists: exists });
 				}
-			})
-			.catch((err) => {
+			} catch (err) {
 				console.error(
 					"[Anki Background] ❌ checkDeckExists failed:",
 					err,
 				);
 				sendResponse({ success: false, error: "Connection Failed" });
-			});
+			}
+		})();
 		return true;
 	}
 
@@ -761,23 +770,23 @@ async function ensureNotebookLMModelExists() {
 	 * @returns {Promise<[string, string, string]>} Promise resolving to [frontHtml, backHtml, stylingCss].
 	 */
 	const loadLocalTemplates = async () => {
-		const frontUrl = chrome.runtime.getURL("anki_templates/front.html");
-		const backUrl = chrome.runtime.getURL("anki_templates/back.html");
-		const cssUrl = chrome.runtime.getURL("anki_templates/styling.css");
+		/**
+		 * Fetches text content of a local extension asset asynchronously.
+		 *
+		 * @param {string} relativePath - Path to extension asset.
+		 * @param {string} fileName - Asset file name for error reporting.
+		 * @returns {Promise<string>} File text content.
+		 */
+		const fetchAsset = async (relativePath, fileName) => {
+			const res = await fetch(chrome.runtime.getURL(relativePath));
+			if (!res.ok) throw new Error(`Failed to fetch ${fileName}`);
+			return res.text();
+		};
 
 		return Promise.all([
-			fetch(frontUrl).then((r) => {
-				if (!r.ok) throw new Error("Failed to fetch front.html");
-				return r.text();
-			}),
-			fetch(backUrl).then((r) => {
-				if (!r.ok) throw new Error("Failed to fetch back.html");
-				return r.text();
-			}),
-			fetch(cssUrl).then((r) => {
-				if (!r.ok) throw new Error("Failed to fetch styling.css");
-				return r.text();
-			}),
+			fetchAsset("anki_templates/front.html", "front.html"),
+			fetchAsset("anki_templates/back.html", "back.html"),
+			fetchAsset("anki_templates/styling.css", "styling.css"),
 		]);
 	};
 
