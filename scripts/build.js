@@ -28,6 +28,12 @@ const SRC_DIR = path.join(ROOT_DIR, "src");
 const DIST_DIR = path.join(ROOT_DIR, "dist");
 
 /**
+ * Temporary staging directory used when preparing Chromium manifest transformations.
+ * @type {string}
+ */
+const CHROME_STAGING_DIR = path.join(DIST_DIR, ".chrome-build");
+
+/**
  * Temporary staging directory used when preparing Firefox manifest transformations.
  * @type {string}
  */
@@ -77,9 +83,23 @@ async function buildChrome(version) {
 	const filename = `notebooklm-to-anki-v${version}-chrome.zip`;
 	console.log(`\n📦 Building Chrome/Edge distribution: ${filename}...`);
 
+	// Ensure staging directory is clean
+	fs.rmSync(CHROME_STAGING_DIR, { recursive: true, force: true });
+	fs.cpSync(SRC_DIR, CHROME_STAGING_DIR, { recursive: true });
+
+	// Inject minimum_chrome_version for Chromium Promise API requirements
+	const stagingManifestPath = path.join(CHROME_STAGING_DIR, "manifest.json");
+	const manifest = JSON.parse(fs.readFileSync(stagingManifestPath, "utf-8"));
+	manifest.minimum_chrome_version = "99";
+	fs.writeFileSync(
+		stagingManifestPath,
+		JSON.stringify(manifest, null, 2) + "\n",
+		"utf-8",
+	);
+
 	const result = await webExt.cmd.build(
 		{
-			sourceDir: SRC_DIR,
+			sourceDir: CHROME_STAGING_DIR,
 			artifactsDir: DIST_DIR,
 			filename: filename,
 			overwriteDest: true,
@@ -94,6 +114,9 @@ async function buildChrome(version) {
 		path.join(DIST_DIR, filename),
 		path.join(DIST_DIR, legacyFilename),
 	);
+
+	// Clean up temporary staging directory
+	fs.rmSync(CHROME_STAGING_DIR, { recursive: true, force: true });
 
 	return result.extensionPath;
 }
