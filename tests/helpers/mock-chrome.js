@@ -988,6 +988,18 @@ export function createMockDOM(options = {}) {
 }
 
 /**
+ * Flushes all pending microtasks and macrotasks in the Node.js event loop.
+ *
+ * @param {number} [iterations=3] - Number of event loop turns to cycle.
+ * @returns {Promise<void>}
+ */
+export async function flushPromises(iterations = 3) {
+	for (let i = 0; i < iterations; i++) {
+		await new Promise((resolve) => setImmediate(resolve));
+	}
+}
+
+/**
  * Creates an in-memory mock implementation of the Chrome extension APIs.
  *
  * @param {Record<string, *>} [initialStorage={}] - Initial key-value pairs for local storage.
@@ -1122,22 +1134,28 @@ export function createMockChrome(initialStorage = {}) {
 				 * @returns {Promise<void>|void} Promise or void if callback passed.
 				 */
 				set: (items, callback) => {
-					const changes = {};
-					for (const [key, value] of Object.entries(items)) {
-						changes[key] = {
-							oldValue: storageData[key],
-							newValue: value,
-						};
-						storageData[key] = value;
-					}
-					for (const listener of storageListeners) {
-						listener(changes, "local");
-					}
+					const persist = () => {
+						const changes = {};
+						for (const [key, value] of Object.entries(items)) {
+							changes[key] = {
+								oldValue: storageData[key],
+								newValue: value,
+							};
+							storageData[key] = value;
+						}
+						for (const listener of storageListeners) {
+							listener(changes, "local");
+						}
+					};
+
 					if (typeof callback === "function") {
-						callback();
+						queueMicrotask(() => {
+							persist();
+							callback();
+						});
 						return;
 					}
-					return Promise.resolve();
+					return Promise.resolve().then(persist);
 				},
 			},
 			onChanged: {

@@ -13,6 +13,7 @@ import {
 	createMockChrome,
 	createMockDOM,
 	createMockFetch,
+	flushPromises,
 } from "../helpers/mock-chrome.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -136,7 +137,7 @@ test("content: UI injection and button click workflow", async (t) => {
 
 	await t.test(
 		"clicking button when Anki is offline shows connection alert",
-		() => {
+		async () => {
 			mockDOM.window.alerts = [];
 			mockChrome.runtime.onMessage.listeners = [
 				(msg, sender, sendResponse) => {
@@ -148,6 +149,7 @@ test("content: UI injection and button click workflow", async (t) => {
 			];
 
 			exportBtn.click();
+			await flushPromises();
 
 			assert.equal(mockDOM.window.alerts.length, 1);
 			assert.equal(
@@ -159,7 +161,7 @@ test("content: UI injection and button click workflow", async (t) => {
 
 	await t.test(
 		"clicking button when Anki is online triggers extraction in iframes",
-		() => {
+		async () => {
 			iframeMessages.length = 0;
 			mockChrome.runtime.onMessage.listeners = [
 				(msg, sender, sendResponse) => {
@@ -171,6 +173,7 @@ test("content: UI injection and button click workflow", async (t) => {
 			];
 
 			exportBtn.click();
+			await flushPromises();
 
 			assert.ok(
 				exportBtn.classList.contains(
@@ -185,12 +188,13 @@ test("content: UI injection and button click workflow", async (t) => {
 
 	await t.test(
 		"clicking button prompts for name if notebook title element is absent",
-		() => {
+		async () => {
 			// Temporarily remove title input
 			titleInput.parentElement.removeChild(titleInput);
 			mockDOM.window.prompts = [];
 
 			exportBtn.click();
+			await flushPromises();
 
 			assert.equal(mockDOM.window.prompts.length, 1);
 			assert.equal(mockDOM.window.prompts[0], "Enter Notebook Name:");
@@ -422,7 +426,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 
 	await t.test(
 		"displays modal when existing deck conflict is detected",
-		() => {
+		async () => {
 			mockDOM.window.postMessage({
 				action: "ANKI_EXTRACTED_DATA",
 				cards: [{ question: "Q1" }],
@@ -431,6 +435,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				quizTitle: "Acids",
 				topicsCovered: ["Acids_Bases", "Equilibrium"],
 			});
+			await flushPromises();
 
 			assert.ok(
 				overlay.classList.contains("show"),
@@ -449,9 +454,10 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 
 	await t.test(
 		"clicking merge sends batch with merge strategy and closes modal",
-		() => {
+		async () => {
 			sentMessages.length = 0;
 			btnMerge.click();
+			await flushPromises();
 
 			assert.equal(
 				overlay.classList.contains("show"),
@@ -472,7 +478,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 
 	await t.test(
 		"clicking increment sends batch with auto-increment title",
-		() => {
+		async () => {
 			mockDOM.window.postMessage({
 				action: "ANKI_REAL_SUCCESS",
 				count: 0,
@@ -485,9 +491,11 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				nbTitle: "Chemistry",
 				quizTitle: "Acids",
 			});
+			await flushPromises();
 
 			sentMessages.length = 0;
 			btnIncrement.click();
+			await flushPromises();
 
 			assert.equal(overlay.classList.contains("show"), false);
 			const sendMsg = sentMessages.find(
@@ -504,7 +512,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 
 	await t.test(
 		"clicking overwrite sends batch with overwrite strategy",
-		() => {
+		async () => {
 			mockDOM.window.postMessage({
 				action: "ANKI_REAL_SUCCESS",
 				count: 0,
@@ -517,9 +525,11 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				nbTitle: "Chemistry",
 				quizTitle: "Acids",
 			});
+			await flushPromises();
 
 			sentMessages.length = 0;
 			btnOverwrite.click();
+			await flushPromises();
 
 			assert.equal(overlay.classList.contains("show"), false);
 			const sendMsg = sentMessages.find(
@@ -530,34 +540,42 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 		},
 	);
 
-	await t.test("clicking cancel aborts export and resets button", () => {
-		mockDOM.window.postMessage({ action: "ANKI_REAL_SUCCESS", count: 0 });
+	await t.test(
+		"clicking cancel aborts export and resets button",
+		async () => {
+			mockDOM.window.postMessage({
+				action: "ANKI_REAL_SUCCESS",
+				count: 0,
+			});
 
-		mockDOM.window.postMessage({
-			action: "ANKI_EXTRACTED_DATA",
-			cards: [{ question: "Q1" }],
-			deckTitle: "NotebookLM::Chemistry::Quizzes::Acids",
-			nbTitle: "Chemistry",
-			quizTitle: "Acids",
-		});
+			mockDOM.window.postMessage({
+				action: "ANKI_EXTRACTED_DATA",
+				cards: [{ question: "Q1" }],
+				deckTitle: "NotebookLM::Chemistry::Quizzes::Acids",
+				nbTitle: "Chemistry",
+				quizTitle: "Acids",
+			});
+			await flushPromises();
 
-		sentMessages.length = 0;
-		btnCancel.click();
+			sentMessages.length = 0;
+			btnCancel.click();
+			await flushPromises();
 
-		assert.equal(overlay.classList.contains("show"), false);
-		const sendMsg = sentMessages.find(
-			(m) => m.action === "sendBatchToAnki",
-		);
-		assert.equal(
-			sendMsg,
-			undefined,
-			"No batch message should be sent on cancel",
-		);
-	});
+			assert.equal(overlay.classList.contains("show"), false);
+			const sendMsg = sentMessages.find(
+				(m) => m.action === "sendBatchToAnki",
+			);
+			assert.equal(
+				sendMsg,
+				undefined,
+				"No batch message should be sent on cancel",
+			);
+		},
+	);
 
 	await t.test(
 		"directly exports with merge strategy when target deck does not exist",
-		() => {
+		async () => {
 			mockDOM.window.postMessage({
 				action: "ANKI_REAL_SUCCESS",
 				count: 0,
@@ -586,6 +604,7 @@ test("content: duplicate deck conflict resolution modal", async (t) => {
 				quizTitle: "BrandNewDeck",
 				topicsCovered: ["General_Chemistry"],
 			});
+			await flushPromises();
 
 			const sendMsg = sentMessages.find(
 				(m) => m.action === "sendBatchToAnki",
