@@ -510,14 +510,6 @@
 						? event.data.imagesFound
 						: "N/A",
 				);
-				if (
-					event.data.mediaLogs &&
-					Array.isArray(event.data.mediaLogs)
-				) {
-					for (const logLine of event.data.mediaLogs) {
-						console.log(`[Anki Media Summary] ${logLine}`);
-					}
-				}
 				isExporting = false;
 				updateButtonState(
 					"success",
