@@ -94,6 +94,73 @@
 	};
 
 	/**
+	 * Extracts Base64 image payload and image format from a loaded HTMLImageElement using an off-screen canvas.
+	 *
+	 * @param {HTMLImageElement} img - The image element to extract data from.
+	 * @returns {{ base64: string, format: string }|null} Extracted Base64 string and file format extension, or null if unreadable.
+	 */
+	function extractDomImageBase64(img) {
+		try {
+			if (!img || typeof document === "undefined") return null;
+			if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
+				return null;
+			}
+
+			const canvas = document.createElement("canvas");
+			canvas.width = img.naturalWidth;
+			canvas.height = img.naturalHeight;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return null;
+
+			ctx.drawImage(img, 0, 0);
+			const dataUrl = canvas.toDataURL("image/png");
+			if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
+
+			const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+			if (!match) return null;
+
+			return {
+				format: match[1] || "png",
+				base64: match[2],
+			};
+		} catch {
+			// Canvas may be tainted if cross-origin without CORS
+			return null;
+		}
+	}
+
+	/**
+	 * Recursively broadcasts a message to a window and all of its nested child iframes.
+	 *
+	 * @param {Document|HTMLElement} root - The document or container element to search for iframes.
+	 * @param {object} message - The message object to post.
+	 * @returns {void}
+	 */
+	function broadcastToFrames(root, message) {
+		try {
+			const container = root.document ? root.document : root;
+			if (!container || typeof container.querySelectorAll !== "function") {
+				return;
+			}
+			const iframes = container.querySelectorAll("iframe");
+			iframes.forEach((iframe) => {
+				try {
+					if (iframe.contentWindow) {
+						iframe.contentWindow.postMessage(message, "*");
+						broadcastToFrames(iframe.contentWindow, message);
+					}
+				} catch {
+					try {
+						iframe.contentWindow?.postMessage(message, "*");
+					} catch {}
+				}
+			});
+		} catch {
+			// Cross-origin restriction fallback
+		}
+	}
+
+	/**
 	 * Initializes the data miner that listens for the app root element
 	 * with data-app-data and processes message triggers from the top window.
 	 *
@@ -103,6 +170,16 @@
 	 */
 	function initDataMiner() {
 		console.log("[Anki Bridge] 🔍 initDataMiner started.");
+
+		// In nested iframe setups (e.g. shim wrapping blob), forward trigger messages downward
+		window.addEventListener("message", (event) => {
+			if (event.data?.action === "ANKI_TRIGGER_EXTRACT") {
+				const appRoot = document.querySelector("[data-app-data]");
+				if (!appRoot) {
+					broadcastToFrames(document, event.data);
+				}
+			}
+		});
 
 		/**
 		 * Helper to check for the [data-app-data] element and initialize setup if present.
@@ -133,6 +210,8 @@
 							rawImageUrls ? "Found" : "None",
 						);
 						processBatch(jsonString, customTitle, rawImageUrls);
+						// Also broadcast to any child iframes
+						broadcastToFrames(document, event.data);
 					}
 				});
 				return true;
@@ -226,10 +305,86 @@
 				finalTitle,
 			);
 
-			const cards = NotebookLMToAnkiUtils.mapQuizDataToCards(
+			// 1. Initial card mapping from parsed quiz JSON
+			let cards = NotebookLMToAnkiUtils.mapQuizDataToCards(
 				quizData,
 				imageUrls,
 			);
+
+			// 2. Resolve cards with images in DOM if diagram URL is missing
+			cards = NotebookLMToAnkiUtils.resolveCardsWithDomImages(
+				cards,
+				document,
+			);
+
+			// 3. For any card with a resolved diagram URL or matching DOM image, attempt Base64 extraction
+			if (typeof document !== "undefined") {
+				const domImages = Array.from(document.querySelectorAll("img"));
+				cards = cards.map((card) => {
+					if (card.imageBase64) return card;
+
+					const matchingImg = domImages.find((img) => {
+						const src = img.src || img.getAttribute("src") || "";
+						if (card.diagramUrl && src === card.diagramUrl) return true;
+						if (
+							card.diagramAlt &&
+							img.alt &&
+							img.alt.trim() === card.diagramAlt.trim()
+						) {
+							return true;
+						}
+						return false;
+					});
+
+					if (matchingImg) {
+						const extracted = extractDomImageBase64(matchingImg);
+						if (extracted) {
+							return {
+								...card,
+								diagramUrl: card.diagramUrl || matchingImg.src,
+								imageBase64: extracted.base64,
+								imageFormat: extracted.format,
+							};
+						}
+					}
+					return card;
+				});
+			}
+
+			// 4. Detailed Image Analysis and Debug Logging
+			const imagesFound = cards.filter(
+				(c) =>
+					c.hasMediaReference ||
+					c.diagramUrl ||
+					c.diagramCaption ||
+					c.diagramAlt,
+			).length;
+			const imagesResolved = cards.filter((c) => Boolean(c.diagramUrl)).length;
+			const imagesMissing = imagesFound - imagesResolved;
+
+			console.log(
+				`[Anki Bridge] 🖼️ Media analysis: ${imagesFound} image(s) found in quiz (${imagesResolved} resolved, ${imagesMissing} missing).`,
+			);
+
+			cards.forEach((card, idx) => {
+				if (
+					card.hasMediaReference ||
+					card.diagramUrl ||
+					card.diagramCaption ||
+					card.diagramAlt
+				) {
+					if (card.diagramUrl) {
+						console.log(
+							`[Anki Bridge] 🖼️ Card #${idx + 1}: Found image reference. Resolved URL: ${card.diagramUrl} (Alt: "${card.diagramAlt || ""}", Caption: "${card.diagramCaption || ""}")`,
+						);
+					} else {
+						console.warn(
+							`[Anki Bridge] ⚠️ Card #${idx + 1}: Image reference found but URL could not be resolved from data-app-data or DOM. (Alt: "${card.diagramAlt || ""}", Caption: "${card.diagramCaption || ""}"). Tip: Navigate to this question in NotebookLM and re-export.`,
+						);
+					}
+				}
+			});
+
 			console.log(
 				"[Anki Bridge] 🗃️ Mapped cards count:",
 				cards.length,
@@ -254,6 +409,8 @@
 						),
 					quizTitle: NotebookLMToAnkiUtils.cleanQuizTitle(quizTitle),
 					topicsCovered: sanitizedTopics,
+					imagesFound: imagesFound,
+					imagesResolved: imagesResolved,
 				},
 				"*",
 			);
@@ -344,6 +501,14 @@
 					event.data.count,
 					"Skipped:",
 					event.data.skipped,
+					"Images exported:",
+					event.data.imagesExported !== undefined
+						? event.data.imagesExported
+						: "N/A",
+					"Images found:",
+					event.data.imagesFound !== undefined
+						? event.data.imagesFound
+						: "N/A",
 				);
 				if (
 					event.data.mediaLogs &&
@@ -371,6 +536,8 @@
 				console.log(
 					"[Anki Bridge] 📦 Extracted cards received on top window:",
 					event.data.cards?.length,
+					"Images found:",
+					event.data.imagesFound !== undefined ? event.data.imagesFound : 0,
 				);
 				handleExtractedData(
 					event.data.cards,
@@ -378,6 +545,8 @@
 					event.data.nbTitle,
 					event.data.quizTitle,
 					event.data.topicsCovered,
+					event.data.imagesFound,
+					event.data.imagesResolved,
 				).catch((err) => {
 					console.error(
 						"[Anki Bridge] ❌ handleExtractedData error:",
@@ -425,6 +594,8 @@
 	 * @param {string} nbTitle - The notebook title.
 	 * @param {string} quizTitle - The quiz artifact title.
 	 * @param {Array<string>} [topicsCovered=[]] - Sanitized topic tags to attach to Anki notes.
+	 * @param {number} [imagesFound=0] - Number of cards with image references found in quiz.
+	 * @param {number} [imagesResolved=0] - Number of cards with image URLs successfully resolved.
 	 * @returns {Promise<void>}
 	 */
 	async function handleExtractedData(
@@ -433,6 +604,8 @@
 		nbTitle,
 		quizTitle,
 		topicsCovered = [],
+		imagesFound = 0,
+		imagesResolved = 0,
 	) {
 		const domQuizTitle = getQuizTitle();
 		console.log(
@@ -457,6 +630,10 @@
 			"Cards Count:",
 			cards.length,
 		);
+		console.log(
+			`[Anki Bridge] 🖼️ Images found in quiz: ${imagesFound} (${imagesResolved} ready to export)`,
+		);
+
 		// Prevent duplicate extraction processing if already extracting/exporting
 		if (isExporting) {
 			console.warn(
@@ -524,6 +701,7 @@
 						resolvedDeckTitle,
 						userAction,
 						topicsCovered,
+						imagesFound,
 					);
 				},
 			);
@@ -537,6 +715,7 @@
 				finalDeckTitle,
 				"merge",
 				topicsCovered,
+				imagesFound,
 			);
 		}
 	}
@@ -549,6 +728,7 @@
 	 * @param {string} deckTitle - The title of the deck.
 	 * @param {string} duplicateAction - Resolution strategy ("merge", "increment", "overwrite").
 	 * @param {Array<string>} [topicsCovered=[]] - Array of sanitized topic tags.
+	 * @param {number} [imagesFound=0] - Number of cards with image references found in quiz.
 	 * @returns {Promise<void>}
 	 */
 	async function sendBatchToAnkiBackground(
@@ -556,6 +736,7 @@
 		deckTitle,
 		duplicateAction,
 		topicsCovered = [],
+		imagesFound = 0,
 	) {
 		let res;
 		try {
@@ -565,6 +746,7 @@
 				deckTitle: deckTitle,
 				duplicateAction: duplicateAction,
 				topicsCovered: topicsCovered,
+				imagesFound: imagesFound,
 			});
 		} catch (err) {
 			console.error(
@@ -582,6 +764,24 @@
 				console.log(`[Anki Background Media] ${logLine}`);
 			}
 		}
+
+		const exportedImgCount =
+			res?.imagesExported !== undefined
+				? res.imagesExported
+				: (res?.imagesFound !== undefined ? res.imagesFound : imagesFound);
+		const foundImgCount =
+			res?.imagesFound !== undefined ? res.imagesFound : imagesFound;
+
+		console.log(
+			`[Anki Bridge] 🖼️ Media summary: ${exportedImgCount} of ${foundImgCount} image(s) successfully exported to Anki.`,
+		);
+
+		if (foundImgCount > exportedImgCount) {
+			console.warn(
+				`[Anki Bridge] ⚠️ ${foundImgCount - exportedImgCount} image(s) were not exported. If an image was lazy-loaded, please navigate to that question in NotebookLM and click Anki Export again.`,
+			);
+		}
+
 		if (res?.success) {
 			window.top.postMessage(
 				{
@@ -589,6 +789,8 @@
 					count: res.count,
 					deck: deckTitle,
 					skipped: res.skipped,
+					imagesFound: foundImgCount,
+					imagesExported: exportedImgCount,
 					mediaLogs: res.mediaLogs || [],
 				},
 				"*",
@@ -796,15 +998,9 @@
 					return;
 				}
 			}
-			const iframes = document.querySelectorAll("iframe");
-			iframes.forEach((iframe) => {
-				iframe.contentWindow.postMessage(
-					{
-						action: "ANKI_TRIGGER_EXTRACT",
-						notebookTitle: deckName,
-					},
-					"*",
-				);
+			broadcastToFrames(document, {
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: deckName,
 			});
 		};
 		return btn;

@@ -122,32 +122,39 @@
 	}
 
 	/**
-	 * Extracts inline markdown image references (e.g. `![alt](image_reference_index:0 "caption")`)
-	 * from question text, cleans the prompt, and resolves the image URL from the provided array.
+	 * Extracts inline markdown image references (e.g. `![alt](image_reference_index:0 "caption")`),
+	 * direct URLs, or HTML image tags from question text or candidate media sources, cleans the prompt,
+	 * and resolves the image URL from the provided array.
 	 *
 	 * @param {string|null|undefined} questionText - Raw question text possibly containing markdown image tags.
 	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
-	 * @returns {{ cleanQuestion: string, mediaUrl: string, alt: string, caption: string }} Extracted media metadata and sanitized prompt.
+	 * @param {Array<string|object>} [additionalSources=[]] - Optional array of question-level media fields (e.g. q.imageUrls).
+	 * @returns {{ cleanQuestion: string, mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean }} Extracted media metadata and sanitized prompt.
 	 */
-	function extractQuestionMedia(questionText, imageUrls = []) {
-		if (!questionText) {
-			return { cleanQuestion: "", mediaUrl: "", alt: "", caption: "" };
-		}
-
+	function extractQuestionMedia(
+		questionText,
+		imageUrls = [],
+		additionalSources = [],
+	) {
+		const safePrompt = questionText || "";
 		const indexedRegex =
-			/!\[(.*?)\]\(image_reference_index:(\d+)(?:\s*"(.*?)")?\)/;
-		const indexedMatch = questionText.match(indexedRegex);
+			/!\[(.*?)\]\(\s*image_reference_index\s*:\s*(\d+)(?:\s*["']?(.*?)["']?)?\s*\)/;
+		const directUrlRegex =
+			/!\[(.*?)\]\(\s*((?:https?:\/\/|\/|blob:|data:)[^\s)]+)(?:\s*["']?(.*?)["']?)?\s*\)/;
+		const htmlImgRegex = /<img\s+([^>]+)>/i;
 
-		if (indexedMatch) {
-			const alt = (indexedMatch[1] || "").trim();
-			const index = parseInt(indexedMatch[2], 10);
-			const caption = (indexedMatch[3] || "").trim();
+		// 1. Check if the question prompt text contains an indexed markdown image reference
+		const promptIndexedMatch = safePrompt.match(indexedRegex);
+		if (promptIndexedMatch) {
+			const alt = (promptIndexedMatch[1] || "").trim();
+			const index = parseInt(promptIndexedMatch[2], 10);
+			const caption = (promptIndexedMatch[3] || "").trim();
 			const mediaUrl =
 				Array.isArray(imageUrls) && imageUrls[index]
 					? imageUrls[index]
 					: "";
-			const cleanQuestion = questionText
-				.replace(indexedMatch[0], "")
+			const cleanQuestion = safePrompt
+				.replace(promptIndexedMatch[0], "")
 				.trim();
 
 			return {
@@ -155,19 +162,18 @@
 				mediaUrl,
 				alt,
 				caption,
+				hasMediaReference: true,
 			};
 		}
 
-		const directUrlRegex =
-			/!\[(.*?)\]\(((?:https?:\/\/|\/)[^\s)]+)(?:\s*"(.*?)")?\)/;
-		const directMatch = questionText.match(directUrlRegex);
-
-		if (directMatch) {
-			const alt = (directMatch[1] || "").trim();
-			const mediaUrl = (directMatch[2] || "").trim();
-			const caption = (directMatch[3] || "").trim();
-			const cleanQuestion = questionText
-				.replace(directMatch[0], "")
+		// 2. Check if the question prompt text contains a direct URL in markdown syntax
+		const promptDirectMatch = safePrompt.match(directUrlRegex);
+		if (promptDirectMatch) {
+			const alt = (promptDirectMatch[1] || "").trim();
+			const mediaUrl = (promptDirectMatch[2] || "").trim();
+			const caption = (promptDirectMatch[3] || "").trim();
+			const cleanQuestion = safePrompt
+				.replace(promptDirectMatch[0], "")
 				.trim();
 
 			return {
@@ -175,14 +181,126 @@
 				mediaUrl,
 				alt,
 				caption,
+				hasMediaReference: true,
 			};
+		}
+
+		// 3. Check if the question prompt text contains an HTML <img> tag
+		const promptHtmlMatch = safePrompt.match(htmlImgRegex);
+		if (promptHtmlMatch) {
+			const attrs = promptHtmlMatch[1];
+			const srcMatch = attrs.match(/src=["']([^"']+)["']/i);
+			const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+			if (srcMatch) {
+				const mediaUrl = srcMatch[1].trim();
+				const alt = altMatch ? altMatch[1].trim() : "";
+				const cleanQuestion = safePrompt
+					.replace(promptHtmlMatch[0], "")
+					.trim();
+
+				return {
+					cleanQuestion,
+					mediaUrl,
+					alt,
+					caption: "",
+					hasMediaReference: true,
+				};
+			}
+		}
+
+		// 4. Check candidate sources outside questionText (e.g. NotebookLM q.imageUrls array)
+		if (Array.isArray(additionalSources) && additionalSources.length > 0) {
+			for (const source of additionalSources) {
+				if (!source) continue;
+
+				if (typeof source === "string") {
+					const srcIndexedMatch = source.match(indexedRegex);
+					if (srcIndexedMatch) {
+						const alt = (srcIndexedMatch[1] || "").trim();
+						const index = parseInt(srcIndexedMatch[2], 10);
+						const caption = (srcIndexedMatch[3] || "").trim();
+						const mediaUrl =
+							Array.isArray(imageUrls) && imageUrls[index]
+								? imageUrls[index]
+								: "";
+
+						return {
+							cleanQuestion: safePrompt.trim(),
+							mediaUrl,
+							alt,
+							caption,
+							hasMediaReference: true,
+						};
+					}
+
+					const srcDirectMatch = source.match(directUrlRegex);
+					if (srcDirectMatch) {
+						const alt = (srcDirectMatch[1] || "").trim();
+						const mediaUrl = (srcDirectMatch[2] || "").trim();
+						const caption = (srcDirectMatch[3] || "").trim();
+
+						return {
+							cleanQuestion: safePrompt.trim(),
+							mediaUrl,
+							alt,
+							caption,
+							hasMediaReference: true,
+						};
+					}
+
+					const srcHtmlMatch = source.match(htmlImgRegex);
+					if (srcHtmlMatch) {
+						const attrs = srcHtmlMatch[1];
+						const srcMatch = attrs.match(/src=["']([^"']+)["']/i);
+						const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+						if (srcMatch) {
+							return {
+								cleanQuestion: safePrompt.trim(),
+								mediaUrl: srcMatch[1].trim(),
+								alt: altMatch ? altMatch[1].trim() : "",
+								caption: "",
+								hasMediaReference: true,
+							};
+						}
+					}
+
+					// Raw URL string fallback
+					if (
+						source.startsWith("http://") ||
+						source.startsWith("https://") ||
+						source.startsWith("blob:") ||
+						source.startsWith("data:") ||
+						source.startsWith("/")
+					) {
+						return {
+							cleanQuestion: safePrompt.trim(),
+							mediaUrl: source.trim(),
+							alt: "",
+							caption: "",
+							hasMediaReference: true,
+						};
+					}
+				} else if (typeof source === "object") {
+					const objUrl = source.url || source.src || "";
+					if (objUrl) {
+						return {
+							cleanQuestion: safePrompt.trim(),
+							mediaUrl: String(objUrl).trim(),
+							alt: (source.alt || "").trim(),
+							caption: (source.caption || "").trim(),
+							hasMediaReference: true,
+						};
+					}
+				}
+			}
 		}
 
 		return {
-			cleanQuestion: questionText.trim(),
+			cleanQuestion: safePrompt.trim(),
 			mediaUrl: "",
 			alt: "",
 			caption: "",
+			hasMediaReference: false,
 		};
 	}
 
@@ -223,6 +341,201 @@
 			.toLowerCase()
 			.replace(/^\$+|\$+$/g, "")
 			.trim();
+	}
+
+	/**
+	 * Recursively traverses an arbitrary JavaScript object or array to find candidate image URLs.
+	 * Filters for strings that look like valid web, blob, or data image URLs.
+	 *
+	 * @param {*} target - The root object or array to traverse.
+	 * @param {Set<object>} [seen=new Set()] - Set of visited objects to prevent circular reference recursion.
+	 * @returns {Array<string>} Discovered image URLs.
+	 */
+	function findImageUrlsDeep(target, seen = new Set()) {
+		if (!target || typeof target !== "object") return [];
+		if (seen.has(target)) return [];
+		seen.add(target);
+
+		const results = [];
+		const isImageUrl = (val) => {
+			if (typeof val !== "string") return false;
+			const trimmed = val.trim();
+			return (
+				trimmed.startsWith("https://") ||
+				trimmed.startsWith("http://") ||
+				trimmed.startsWith("blob:") ||
+				trimmed.startsWith("data:image/") ||
+				trimmed.includes("googleusercontent.com")
+			);
+		};
+
+		if (Array.isArray(target)) {
+			for (const item of target) {
+				if (isImageUrl(item)) {
+					results.push(item.trim());
+				} else if (item && typeof item === "object") {
+					results.push(...findImageUrlsDeep(item, seen));
+				}
+			}
+		} else {
+			// Check standard property keys first
+			const imageProps = [
+				"imageUrls",
+				"image_urls",
+				"images",
+				"imageUrl",
+				"image_url",
+				"pictureUrls",
+				"photoUrls",
+			];
+			for (const prop of imageProps) {
+				if (Array.isArray(target[prop])) {
+					for (const url of target[prop]) {
+						if (isImageUrl(url)) results.push(url.trim());
+					}
+				} else if (isImageUrl(target[prop])) {
+					results.push(target[prop].trim());
+				}
+			}
+
+			// Traverse all properties
+			for (const key of Object.keys(target)) {
+				const val = target[key];
+				if (typeof val === "string" && isImageUrl(val)) {
+					results.push(val.trim());
+				} else if (val && typeof val === "object") {
+					results.push(...findImageUrlsDeep(val, seen));
+				}
+			}
+		}
+
+		return Array.from(new Set(results));
+	}
+
+	/**
+	 * Matches cards that have media references but missing diagram URLs against rendered <img> elements in the DOM.
+	 * Compares image alt text, surrounding captions (.question-image-caption), and question prompt text.
+	 *
+	 * @param {Array<object>} cards - Array of normalized card objects.
+	 * @param {Document|Element|null} [rootNode=null] - DOM document or root element to search within.
+	 * @returns {Array<object>} Cards with resolved diagram URLs where matching DOM elements were found.
+	 */
+	function resolveCardsWithDomImages(cards, rootNode = null) {
+		if (!Array.isArray(cards)) return [];
+		const searchRoot =
+			rootNode || (typeof document !== "undefined" ? document : null);
+		if (!searchRoot || typeof searchRoot.querySelectorAll !== "function") {
+			return cards;
+		}
+
+		const domImages = Array.from(
+			searchRoot.querySelectorAll("img, .question-image"),
+		);
+		if (domImages.length === 0) return cards;
+
+		return cards.map((card) => {
+			if (card.diagramUrl || !card.hasMediaReference) {
+				return card;
+			}
+
+			// Try to match against DOM images
+			for (const img of domImages) {
+				const src =
+					img.src ||
+					img.getAttribute("src") ||
+					img.getAttribute("data-src") ||
+					"";
+				if (!src || src.startsWith("data:image/svg+xml")) continue;
+
+				const alt = (
+					img.alt ||
+					img.getAttribute("alt") ||
+					""
+				).trim();
+				const parent = img.parentElement;
+				const captionEl =
+					parent?.querySelector(
+						".question-image-caption, .caption, figcaption",
+					) ||
+					searchRoot.querySelector?.(
+						".question-image-caption, .caption, figcaption",
+					);
+				const caption = (captionEl?.textContent || "").trim();
+
+				/**
+				 * Normalizes a string for flexible matching across spaces, underscores, URI encoding, and casing.
+				 *
+				 * @param {string|null|undefined} str - String to normalize.
+				 * @returns {string} Normalized string with collapsed whitespace and lowercased characters.
+				 */
+				const normalizeForMatch = (str) => {
+					if (!str) return "";
+					let decoded = str;
+					try {
+						decoded = decodeURIComponent(str);
+					} catch {
+						// Keep original string if URI decode throws
+					}
+					return decoded.toLowerCase().replace(/[_\s]+/g, " ").trim();
+				};
+
+				const normDomCaption = normalizeForMatch(caption);
+				const normCardCaption = normalizeForMatch(card.diagramCaption);
+				const normDomAlt = normalizeForMatch(alt);
+				const normCardAlt = normalizeForMatch(card.diagramAlt);
+
+				let matched = false;
+
+				// 1. Match by caption (direct or normalized for spaces/underscores/casing/%20)
+				if (
+					card.diagramCaption &&
+					caption &&
+					(caption.includes(card.diagramCaption) ||
+						card.diagramCaption.includes(caption) ||
+						(normCardCaption &&
+							normDomCaption &&
+							(normDomCaption.includes(normCardCaption) ||
+								normCardCaption.includes(normDomCaption))))
+				) {
+					matched = true;
+				}
+
+				// 2. Match by alt text (direct or normalized)
+				if (
+					!matched &&
+					card.diagramAlt &&
+					alt &&
+					(alt.includes(card.diagramAlt) ||
+						card.diagramAlt.includes(alt) ||
+						(normCardAlt &&
+							normDomAlt &&
+							(normDomAlt.includes(normCardAlt) ||
+								normCardAlt.includes(normDomAlt))))
+				) {
+					matched = true;
+				}
+
+				// 3. Fallback: if only 1 diagram card and 1 question-image in DOM
+				if (
+					!matched &&
+					img.classList?.contains("question-image") &&
+					cards.filter((c) => c.hasMediaReference).length === 1
+				) {
+					matched = true;
+				}
+
+				if (matched) {
+					return {
+						...card,
+						diagramUrl: src,
+						diagramAlt: card.diagramAlt || alt,
+						diagramCaption: card.diagramCaption || caption,
+					};
+				}
+			}
+
+			return card;
+		});
 	}
 
 	/**
@@ -272,8 +585,37 @@
 			}
 		}
 
-		if (imageUrls.length === 0 && Array.isArray(data.imageUrls)) {
-			imageUrls = data.imageUrls;
+		if (imageUrls.length === 0) {
+			if (Array.isArray(data.imageUrls) && data.imageUrls.length > 0) {
+				imageUrls = data.imageUrls;
+			} else if (
+				Array.isArray(data.mostRecentQuery?.imageUrls) &&
+				data.mostRecentQuery.imageUrls.length > 0
+			) {
+				imageUrls = data.mostRecentQuery.imageUrls;
+			} else if (
+				Array.isArray(data.image_urls) &&
+				data.image_urls.length > 0
+			) {
+				imageUrls = data.image_urls;
+			} else if (
+				Array.isArray(data.mostRecentQuery?.image_urls) &&
+				data.mostRecentQuery.image_urls.length > 0
+			) {
+				imageUrls = data.mostRecentQuery.image_urls;
+			} else if (Array.isArray(data.images) && data.images.length > 0) {
+				imageUrls = data.images;
+			} else if (
+				Array.isArray(data.mostRecentQuery?.images) &&
+				data.mostRecentQuery.images.length > 0
+			) {
+				imageUrls = data.mostRecentQuery.images;
+			} else {
+				const deepFound = findImageUrlsDeep(data);
+				if (deepFound.length > 0) {
+					imageUrls = deepFound;
+				}
+			}
 		}
 
 		const rawTopics =
@@ -300,7 +642,19 @@
 		if (!Array.isArray(quizData)) return [];
 
 		return quizData.map((q) => {
-			const media = extractQuestionMedia(q.question || "", imageUrls);
+			const candidateSources = [
+				...(Array.isArray(q.imageUrls) ? q.imageUrls : []),
+				...(Array.isArray(q.image_urls) ? q.image_urls : []),
+				...(Array.isArray(q.images) ? q.images : []),
+				...(q.imageUrl ? [q.imageUrl] : []),
+				...(q.image_url ? [q.image_url] : []),
+				...(q.image ? [q.image] : []),
+			];
+			const media = extractQuestionMedia(
+				q.question || "",
+				imageUrls,
+				candidateSources,
+			);
 			const rawType = (q.type || "").toLowerCase();
 
 			let questionType = "MULTIPLE_CHOICE";
@@ -357,6 +711,12 @@
 				diagramUrl: media.mediaUrl || "",
 				diagramAlt: media.alt || "",
 				diagramCaption: media.caption || "",
+				hasMediaReference: Boolean(
+					media.hasMediaReference ||
+						media.mediaUrl ||
+						media.caption ||
+						media.alt,
+				),
 				image: "",
 
 				// Multi-choice & Multi-select Options
@@ -502,9 +862,11 @@
 	 *   cleanQuizTitle: function((string|null|undefined)): string,
 	 *   formatDeckTitle: function((string|null|undefined), (string|null|undefined), string=): string,
 	 *   formatErrorMessage: function((string|Array<string>|null|undefined)): string,
-	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string },
+	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=, Array<string|object>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean },
 	 *   sanitizeTopicTags: function((Array<string>|null|undefined)): Array<string>,
 	 *   normalizeBlankAnswer: function((string|null|undefined)): string,
+	 *   findImageUrlsDeep: function(*, Set<object>=): Array<string>,
+	 *   resolveCardsWithDomImages: function(Array<object>, (Document|Element|null)=): Array<object>,
 	 *   parseQuizJson: function(string, (string|Array<string>|null|undefined)=): { quizData: Array<object>, title: (string|undefined), topicsCovered: Array<string>, imageUrls: Array<string> },
 	 *   mapQuizDataToCards: function(Array<object>, Array<string>=): Array<object>,
 	 *   mapCardsToAnkiNotes: function(Array<object>, string, string=, Array<string>=): Array<object>,
@@ -521,6 +883,8 @@
 		extractQuestionMedia,
 		sanitizeTopicTags,
 		normalizeBlankAnswer,
+		findImageUrlsDeep,
+		resolveCardsWithDomImages,
 		parseQuizJson,
 		mapQuizDataToCards,
 		mapCardsToAnkiNotes,

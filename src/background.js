@@ -498,6 +498,7 @@ async function processCardMedia(cards, mediaLogs = []) {
 			return {
 				...card,
 				image: imageFieldHtml,
+				mediaPersisted: Boolean(localFilename),
 			};
 		}),
 	);
@@ -669,6 +670,25 @@ async function handleSendBatchToAnki(request, sendResponse) {
 		}
 
 		// 7. Insert notes into Anki
+		const imagesFound =
+			typeof request.imagesFound === "number"
+				? request.imagesFound
+				: (request.batchData || []).filter(
+						(c) =>
+							c.hasMediaReference ||
+							c.diagramUrl ||
+							c.diagramCaption ||
+							c.diagramAlt,
+					).length;
+
+		const imagesExported = processedCards.filter(
+			(c) => c.mediaPersisted,
+		).length;
+
+		console.log(
+			`[Anki Background] 🖼️ Media report: ${imagesExported} of ${imagesFound} image(s) persisted to Anki collection.media.`,
+		);
+
 		if (finalNotesToSend.length === 0) {
 			console.log(
 				"[Anki Background] ℹ️ No new notes to insert after duplicate filtering.",
@@ -677,6 +697,9 @@ async function handleSendBatchToAnki(request, sendResponse) {
 				success: true,
 				count: 0,
 				skipped: initialSkippedCount,
+				imagesFound: imagesFound,
+				imagesExported: imagesExported,
+				mediaLogs: mediaLogs,
 			});
 			return;
 		}
@@ -705,6 +728,8 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			sendResponse({
 				success: false,
 				error: `Anki Error: ${addData.error}`,
+				imagesFound: imagesFound,
+				imagesExported: imagesExported,
 				mediaLogs: mediaLogs,
 			});
 			return;
@@ -724,6 +749,8 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			success: true,
 			count: successCount,
 			skipped: skippedCount,
+			imagesFound: imagesFound,
+			imagesExported: imagesExported,
 			mediaLogs: mediaLogs,
 		});
 	} catch (err) {
@@ -731,6 +758,8 @@ async function handleSendBatchToAnki(request, sendResponse) {
 		sendResponse({
 			success: false,
 			error: `Anki Error: ${err.message}`,
+			imagesFound: typeof imagesFound === "number" ? imagesFound : 0,
+			imagesExported: typeof imagesExported === "number" ? imagesExported : 0,
 			mediaLogs: typeof mediaLogs !== "undefined" ? mediaLogs : [],
 		});
 	}
