@@ -357,15 +357,32 @@
 		seen.add(target);
 
 		const results = [];
+
+		/**
+		 * Validates whether a candidate string is an image URL.
+		 *
+		 * Supports blob, data:image, Google CDN endpoints, and common image file extensions.
+		 *
+		 * @param {*} val - Candidate value to inspect.
+		 * @returns {boolean} True if the value matches image URL patterns.
+		 */
 		const isImageUrl = (val) => {
 			if (typeof val !== "string") return false;
 			const trimmed = val.trim();
-			return (
-				trimmed.startsWith("https://") ||
-				trimmed.startsWith("http://") ||
+			if (
 				trimmed.startsWith("blob:") ||
 				trimmed.startsWith("data:image/") ||
-				trimmed.includes("googleusercontent.com")
+				trimmed.includes("googleusercontent.com") ||
+				trimmed.includes("usercontent.goog") ||
+				trimmed.includes("lh3.google.com")
+			) {
+				return true;
+			}
+			return (
+				/^https?:\/\//i.test(trimmed) &&
+				/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico|tiff?)(\?|#|$)/i.test(
+					trimmed,
+				)
 			);
 		};
 
@@ -433,6 +450,8 @@
 		);
 		if (domImages.length === 0) return cards;
 
+		const assignedDomImages = new Set();
+
 		return cards.map((card) => {
 			if (card.diagramUrl || !card.hasMediaReference) {
 				return card;
@@ -440,26 +459,29 @@
 
 			// Try to match against DOM images
 			for (const img of domImages) {
+				if (assignedDomImages.has(img)) continue;
+
 				const src =
 					img.src ||
-					img.getAttribute("src") ||
-					img.getAttribute("data-src") ||
+					img.getAttribute?.("src") ||
+					img.getAttribute?.("data-src") ||
 					"";
 				if (!src || src.startsWith("data:image/svg+xml")) continue;
 
 				const alt = (
 					img.alt ||
-					img.getAttribute("alt") ||
+					img.getAttribute?.("alt") ||
 					""
 				).trim();
-				const parent = img.parentElement;
-				const captionEl =
-					parent?.querySelector(
-						".question-image-caption, .caption, figcaption",
-					) ||
-					searchRoot.querySelector?.(
-						".question-image-caption, .caption, figcaption",
-					);
+				const parent =
+					(typeof img.closest === "function" &&
+						img.closest(
+							"figure, .question-image-container, .image-container",
+						)) ||
+					img.parentElement;
+				const captionEl = parent?.querySelector(
+					".question-image-caption, .caption, figcaption",
+				);
 				const caption = (captionEl?.textContent || "").trim();
 
 				/**
@@ -525,6 +547,7 @@
 				}
 
 				if (matched) {
+					assignedDomImages.add(img);
 					return {
 						...card,
 						diagramUrl: src,

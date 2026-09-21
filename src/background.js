@@ -513,6 +513,33 @@ async function processCardMedia(cards, mediaLogs = []) {
  * @returns {Promise<void>}
  */
 async function handleSendBatchToAnki(request, sendResponse) {
+	/**
+	 * Diagnostic logs collected during media persistence.
+	 * @type {Array<string>}
+	 */
+	const mediaLogs = [];
+
+	/**
+	 * Total count of cards containing media references in this batch.
+	 * @type {number}
+	 */
+	const imagesFound =
+		typeof request.imagesFound === "number"
+			? request.imagesFound
+			: (request.batchData || []).filter(
+					(c) =>
+						c.hasMediaReference ||
+						c.diagramUrl ||
+						c.diagramCaption ||
+						c.diagramAlt,
+				).length;
+
+	/**
+	 * Count of media assets successfully persisted to Anki collection.media.
+	 * @type {number}
+	 */
+	let imagesExported = 0;
+
 	try {
 		console.log(
 			"[Anki Background] 🚀 Starting export batch to Anki. Title:",
@@ -581,13 +608,14 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			throw new Error(deckData.error);
 		}
 
-		const mediaLogs = [];
-
 		// 4. Download media assets to Anki media collection
 		const processedCards = await processCardMedia(
 			request.batchData || [],
 			mediaLogs,
 		);
+		imagesExported = processedCards.filter(
+			(c) => c.mediaPersisted,
+		).length;
 
 		// 5. Map cards to Anki note objects with topic tags
 		const notes = NotebookLMToAnkiUtils.mapCardsToAnkiNotes(
@@ -670,21 +698,6 @@ async function handleSendBatchToAnki(request, sendResponse) {
 		}
 
 		// 7. Insert notes into Anki
-		const imagesFound =
-			typeof request.imagesFound === "number"
-				? request.imagesFound
-				: (request.batchData || []).filter(
-						(c) =>
-							c.hasMediaReference ||
-							c.diagramUrl ||
-							c.diagramCaption ||
-							c.diagramAlt,
-					).length;
-
-		const imagesExported = processedCards.filter(
-			(c) => c.mediaPersisted,
-		).length;
-
 		console.log(
 			`[Anki Background] 🖼️ Media report: ${imagesExported} of ${imagesFound} image(s) persisted to Anki collection.media.`,
 		);
@@ -758,9 +771,9 @@ async function handleSendBatchToAnki(request, sendResponse) {
 		sendResponse({
 			success: false,
 			error: `Anki Error: ${err.message}`,
-			imagesFound: typeof imagesFound === "number" ? imagesFound : 0,
-			imagesExported: typeof imagesExported === "number" ? imagesExported : 0,
-			mediaLogs: typeof mediaLogs !== "undefined" ? mediaLogs : [],
+			imagesFound: imagesFound,
+			imagesExported: imagesExported,
+			mediaLogs: mediaLogs,
 		});
 	}
 }
