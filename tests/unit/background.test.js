@@ -1258,4 +1258,61 @@ test("background: media downloading and embedding", async (t) => {
 			assert.equal(response.imagesExported, 1);
 		},
 	);
+
+	await t.test(
+		"preserves imagesFound, imagesExported, and mediaLogs in error response envelope when note creation fails",
+		async () => {
+			const origFetchHandler = fetchHandler;
+			fetchHandler = async (url, options) => {
+				if (options?.body) {
+					try {
+						const body = JSON.parse(options.body);
+						if (body.action === "addNotes") {
+							throw new Error("AnkiConnect database locked");
+						}
+					} catch (e) {
+						if (e.message === "AnkiConnect database locked") throw e;
+					}
+				}
+				return origFetchHandler(url, options);
+			};
+
+			try {
+				const response = await sendRuntimeMessage(messageListener, {
+					action: "sendBatchToAnki",
+					deckTitle: "FailDeck",
+					duplicateAction: "increment",
+					batchData: [
+						{
+							question: "Q with media that fails on addNotes",
+							diagramUrl:
+								"https://lh3.googleusercontent.com/success-media.png",
+							imageBase64:
+								"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+							imageFormat: "png",
+							diagramAlt: "FailAlt",
+							hasMediaReference: true,
+							option1: "A",
+							flag1: "True",
+						},
+					],
+					imagesFound: 1,
+				});
+
+				assert.equal(response.success, false);
+				assert.ok(response.error.includes("AnkiConnect database locked"));
+				assert.equal(response.imagesFound, 1);
+				assert.equal(response.imagesExported, 1);
+				assert.ok(Array.isArray(response.mediaLogs));
+				assert.ok(response.mediaLogs.length >= 1);
+				assert.ok(
+					response.mediaLogs.some((log) =>
+						log.includes("Successfully"),
+					),
+				);
+			} finally {
+				fetchHandler = origFetchHandler;
+			}
+		},
+	);
 });

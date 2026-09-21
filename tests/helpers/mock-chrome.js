@@ -255,6 +255,30 @@ export class MockElement extends MockNode {
 		this.disabled = false;
 
 		/**
+		 * Pixel width property.
+		 * @type {number}
+		 */
+		this.width = 0;
+
+		/**
+		 * Pixel height property.
+		 * @type {number}
+		 */
+		this.height = 0;
+
+		/**
+		 * Intrinsic natural width property.
+		 * @type {number}
+		 */
+		this.naturalWidth = 0;
+
+		/**
+		 * Intrinsic natural height property.
+		 * @type {number}
+		 */
+		this.naturalHeight = 0;
+
+		/**
 		 * Direct onclick handler property.
 		 * @type {function(object): void|null}
 		 */
@@ -346,6 +370,42 @@ export class MockElement extends MockNode {
 	 */
 	set className(value) {
 		this.setAttribute("class", value);
+	}
+
+	/**
+	 * Element src attribute getter.
+	 *
+	 * @returns {string} The src attribute.
+	 */
+	get src() {
+		return this._attributes.get("src") || "";
+	}
+
+	/**
+	 * Element src attribute setter.
+	 *
+	 * @param {string} value - The src URL.
+	 */
+	set src(value) {
+		this.setAttribute("src", value);
+	}
+
+	/**
+	 * Element alt attribute getter.
+	 *
+	 * @returns {string} The alt attribute.
+	 */
+	get alt() {
+		return this._attributes.get("alt") || "";
+	}
+
+	/**
+	 * Element alt attribute setter.
+	 *
+	 * @param {string} value - The alt text.
+	 */
+	set alt(value) {
+		this.setAttribute("alt", value);
 	}
 
 	/**
@@ -532,6 +592,42 @@ export class MockElement extends MockNode {
 			current = /** @type {MockElement|null} */ (current.parentElement);
 		}
 		return null;
+	}
+
+	/**
+	 * Mock 2D rendering context getter for canvas elements.
+	 *
+	 * @param {string} contextType - Context identifier.
+	 * @returns {object|null} Mock 2D rendering context or null.
+	 */
+	getContext(contextType) {
+		if (contextType === "2d") {
+			return {
+				/**
+				 * Mock drawImage method.
+				 * @param {MockElement} _img - Source image element.
+				 * @param {number} _sx - Destination x coordinate.
+				 * @param {number} _sy - Destination y coordinate.
+				 * @param {number} _sw - Destination width.
+				 * @param {number} _sh - Destination height.
+				 * @returns {void}
+				 */
+				drawImage: (_img, _sx, _sy, _sw, _sh) => {},
+			};
+		}
+		return null;
+	}
+
+	/**
+	 * Mock toDataURL serialization for canvas elements.
+	 *
+	 * @param {string} [type="image/png"] - Desired image MIME format.
+	 * @param {number} [_quality] - Image quality.
+	 * @returns {string} Mock Base64 data URL.
+	 */
+	toDataURL(type = "image/png", _quality) {
+		const format = type.includes("webp") ? "webp" : "png";
+		return `data:image/${format};base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==`;
 	}
 
 	/**

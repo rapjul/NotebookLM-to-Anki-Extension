@@ -255,6 +255,50 @@ test("content: data miner detection and batch extraction", async (t) => {
 	);
 
 	await t.test(
+		"ANKI_TRIGGER_EXTRACT deduplicates identical triggerId to prevent multiple extractions",
+		async () => {
+			let extractionCount = 0;
+			/**
+			 * Listener for messages posted back to window.
+			 * @param {object} event - Message event.
+			 * @returns {void}
+			 */
+			const messageHandler = (event) => {
+				if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+					extractionCount++;
+				}
+			};
+			mockDOM.window.addEventListener("message", messageHandler);
+
+			const triggerId = "test-dedup-trigger-" + Date.now();
+			mockDOM.window.postMessage({
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: "Organic Chemistry",
+				triggerId,
+			});
+
+			await flushPromises();
+
+			// Send duplicate trigger with identical triggerId
+			mockDOM.window.postMessage({
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: "Organic Chemistry",
+				triggerId,
+			});
+
+			await flushPromises();
+			await new Promise((resolve) => setTimeout(resolve, 30));
+
+			mockDOM.window.removeEventListener("message", messageHandler);
+			assert.equal(
+				extractionCount,
+				1,
+				"Duplicate triggerId should not trigger multiple extractions",
+			);
+		},
+	);
+
+	await t.test(
 		"ANKI_TRIGGER_EXTRACT resolves data-image-urls and covered topics for multi-format quiz",
 		async () => {
 			mockDOM.window.postMessage({

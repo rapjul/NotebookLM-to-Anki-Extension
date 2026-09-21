@@ -497,6 +497,30 @@ test("transformer: findImageUrlsDeep", async (t) => {
 		assert.equal(urls.length, 1);
 		assert.equal(urls[0], "https://lh3.googleusercontent.com/circle.png");
 	});
+
+	await t.test("rejects non-image web URLs such as citations and documentation links", () => {
+		const dataWithCitations = {
+			sources: [
+				"https://en.wikipedia.org/wiki/Kirchhoff_laws",
+				"https://example.com/physics/lecture-notes.html",
+				"https://google.com/search?q=circuits",
+			],
+			nested: {
+				validMedia: "https://lh3.googleusercontent.com/circuit.png",
+				googleUserContent: "https://notes.usercontent.goog/diagram.svg",
+				blobMedia: "blob:https://notebooklm.google.com/12345-blob",
+				citationLink: "https://academic.oup.com/article/12345",
+			},
+		};
+
+		const urls = findImageUrlsDeep(dataWithCitations);
+		assert.equal(urls.length, 3);
+		assert.ok(urls.includes("https://lh3.googleusercontent.com/circuit.png"));
+		assert.ok(urls.includes("https://notes.usercontent.goog/diagram.svg"));
+		assert.ok(urls.includes("blob:https://notebooklm.google.com/12345-blob"));
+		assert.ok(!urls.includes("https://en.wikipedia.org/wiki/Kirchhoff_laws"));
+		assert.ok(!urls.includes("https://example.com/physics/lecture-notes.html"));
+	});
 });
 
 test("transformer: resolveCardsWithDomImages", async (t) => {
@@ -857,4 +881,109 @@ test("transformer: resolveCardsWithDomImages", async (t) => {
 		assert.equal(resolved[0].diagramUrl, "https://lh3.googleusercontent.com/ch1.png");
 		assert.equal(resolved[1].diagramUrl, "https://lh3.googleusercontent.com/ch2.png");
 	});
+
+	await t.test(
+		"prevents 1-to-many collision when multiple cards share identical captions and only 1 image exists in DOM",
+		() => {
+			const cards = [
+				{
+					question: "Question 1 about Circuit Node 1",
+					diagramUrl: "",
+					diagramCaption: "Source: Lecture_Notes.pdf (Page 5)",
+					hasMediaReference: true,
+				},
+				{
+					question: "Question 2 about Circuit Node 2",
+					diagramUrl: "",
+					diagramCaption: "Source: Lecture_Notes.pdf (Page 5)",
+					hasMediaReference: true,
+				},
+			];
+
+			// Only 1 image rendered in DOM due to NotebookLM lazy-loading
+			const mockDom = {
+				querySelectorAll: (selector) => {
+					if (selector.includes("img")) {
+						return [
+							{
+								src: "https://lh3.googleusercontent.com/node1_diagram.png",
+								alt: "Node 1 Diagram",
+								parentElement: {
+									querySelector: (subSelector) => {
+										if (subSelector.includes("caption")) {
+											return {
+												textContent:
+													"Source: Lecture_Notes.pdf (Page 5)",
+											};
+										}
+										return null;
+									},
+								},
+							},
+						];
+					}
+					return [];
+				},
+			};
+
+			const resolved = resolveCardsWithDomImages(cards, mockDom);
+			assert.equal(resolved.length, 2);
+			assert.equal(
+				resolved[0].diagramUrl,
+				"https://lh3.googleusercontent.com/node1_diagram.png",
+			);
+			// Card 2 must NOT receive Card 1's image; it must remain unresolved
+			assert.equal(
+				resolved[1].diagramUrl,
+				"",
+				"Second card sharing caption should not claim already assigned DOM image",
+			);
+		},
+	);
+
+	await t.test(
+		"does not match unrelated document captions when parent container lacks caption element",
+		() => {
+			const cards = [
+				{
+					question: "Question about uncaptioned diagram",
+					diagramUrl: "",
+					diagramCaption: "Unrelated Chapter 9.pdf",
+					hasMediaReference: true,
+				},
+			];
+
+			// Image whose parent has no caption, but searchRoot would have returned a caption
+			const mockDom = {
+				querySelectorAll: (selector) => {
+					if (selector.includes("img")) {
+						return [
+							{
+								src: "https://lh3.googleusercontent.com/uncaptioned.png",
+								alt: "",
+								parentElement: {
+									querySelector: () => null, // No caption in parent
+								},
+							},
+						];
+					}
+					return [];
+				},
+				querySelector: (selector) => {
+					if (selector.includes("caption")) {
+						return { textContent: "Unrelated Chapter 9.pdf" };
+					}
+					return null;
+				},
+			};
+
+			const resolved = resolveCardsWithDomImages(cards, mockDom);
+			assert.equal(resolved.length, 1);
+			assert.equal(
+				resolved[0].diagramUrl,
+				"",
+				"Should not match caption from document-wide searchRoot fallback",
+			);
+		},
+	);
 });
