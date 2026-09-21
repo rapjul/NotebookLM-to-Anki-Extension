@@ -96,31 +96,55 @@
 	/**
 	 * Extracts Base64 image payload and image format from a loaded HTMLImageElement using an off-screen canvas.
 	 *
+	 * Constrains canvas dimensions to maxDimension (default 2048px) and prioritizes WebP compression
+	 * with automatic PNG fallback to minimize memory footprint and avoid IPC message bottlenecks.
+	 *
 	 * @param {HTMLImageElement} img - The image element to extract data from.
+	 * @param {number} [maxDimension=2048] - Maximum dimension (width or height) to bound the image to.
 	 * @returns {{ base64: string, format: string }|null} Extracted Base64 string and file format extension, or null if unreadable.
 	 */
-	function extractDomImageBase64(img) {
+	function extractDomImageBase64(img, maxDimension = 2048) {
 		try {
 			if (!img || typeof document === "undefined") return null;
 			if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
 				return null;
 			}
 
+			let width = img.naturalWidth;
+			let height = img.naturalHeight;
+			if (width > maxDimension || height > maxDimension) {
+				if (width >= height) {
+					height = Math.round((height * maxDimension) / width);
+					width = maxDimension;
+				} else {
+					width = Math.round((width * maxDimension) / height);
+					height = maxDimension;
+				}
+			}
+
 			const canvas = document.createElement("canvas");
-			canvas.width = img.naturalWidth;
-			canvas.height = img.naturalHeight;
+			canvas.width = width;
+			canvas.height = height;
 			const ctx = canvas.getContext("2d");
 			if (!ctx) return null;
 
-			ctx.drawImage(img, 0, 0);
-			const dataUrl = canvas.toDataURL("image/png");
+			ctx.drawImage(img, 0, 0, width, height);
+
+			// Attempt WebP serialization at 0.85 quality; fallback to PNG if WebP is unsupported
+			let dataUrl = canvas.toDataURL("image/webp", 0.85);
+			if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
+				dataUrl = canvas.toDataURL("image/png");
+			}
 			if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
+
+			// Enforce a sensible 5MB Base64 payload limit per individual image
+			if (dataUrl.length > 5 * 1024 * 1024) return null;
 
 			const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
 			if (!match) return null;
 
 			return {
-				format: match[1] || "png",
+				format: match[1] || "webp",
 				base64: match[2],
 			};
 		} catch {
@@ -130,9 +154,9 @@
 	}
 
 	/**
-	 * Recursively broadcasts a message to a window and all of its nested child iframes.
+	 * Dispatches a message to direct child iframes without recursive descendant traversal.
 	 *
-	 * @param {Document|HTMLElement} root - The document or container element to search for iframes.
+	 * @param {Document|HTMLElement} root - The document or container element to search for direct iframes.
 	 * @param {object} message - The message object to post.
 	 * @returns {void}
 	 */
@@ -147,7 +171,6 @@
 				try {
 					if (iframe.contentWindow) {
 						iframe.contentWindow.postMessage(message, "*");
-						broadcastToFrames(iframe.contentWindow, message);
 					}
 				} catch {
 					try {
@@ -159,6 +182,12 @@
 			// Cross-origin restriction fallback
 		}
 	}
+
+	/**
+	 * Set of processed trigger IDs to prevent duplicate batch extractions.
+	 * @type {Set<string>}
+	 */
+	const handledTriggerIds = new Set();
 
 	/**
 	 * Initializes the data miner that listens for the app root element
@@ -174,6 +203,10 @@
 		// In nested iframe setups (e.g. shim wrapping blob), forward trigger messages downward
 		window.addEventListener("message", (event) => {
 			if (event.data?.action === "ANKI_TRIGGER_EXTRACT") {
+				const triggerId = event.data.triggerId;
+				if (triggerId && handledTriggerIds.has(triggerId)) {
+					return;
+				}
 				const appRoot = document.querySelector("[data-app-data]");
 				if (!appRoot) {
 					broadcastToFrames(document, event.data);
@@ -193,7 +226,18 @@
 				);
 				window.top.postMessage({ action: "ANKI_MINER_READY" }, "*");
 				window.addEventListener("message", (event) => {
-					if (event.data.action === "ANKI_TRIGGER_EXTRACT") {
+					if (event.data?.action === "ANKI_TRIGGER_EXTRACT") {
+						const triggerId = event.data.triggerId;
+						if (triggerId) {
+							if (handledTriggerIds.has(triggerId)) {
+								return;
+							}
+							handledTriggerIds.add(triggerId);
+							if (handledTriggerIds.size > 50) {
+								const first = handledTriggerIds.values().next().value;
+								handledTriggerIds.delete(first);
+							}
+						}
 						console.log(
 							"[Anki Bridge] 📥 Data Miner received ANKI_TRIGGER_EXTRACT trigger message:",
 							event.data,
@@ -210,8 +254,6 @@
 							rawImageUrls ? "Found" : "None",
 						);
 						processBatch(jsonString, customTitle, rawImageUrls);
-						// Also broadcast to any child iframes
-						broadcastToFrames(document, event.data);
 					}
 				});
 				return true;
@@ -758,11 +800,9 @@
 		}
 
 		const exportedImgCount =
-			res?.imagesExported !== undefined
-				? res.imagesExported
-				: (res?.imagesFound !== undefined ? res.imagesFound : imagesFound);
+			typeof res?.imagesExported === "number" ? res.imagesExported : 0;
 		const foundImgCount =
-			res?.imagesFound !== undefined ? res.imagesFound : imagesFound;
+			typeof res?.imagesFound === "number" ? res.imagesFound : imagesFound;
 
 		console.log(
 			`[Anki Bridge] 🖼️ Media summary: ${exportedImgCount} of ${foundImgCount} image(s) successfully exported to Anki.`,
@@ -990,9 +1030,11 @@
 					return;
 				}
 			}
+			const triggerId = `extract_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 			broadcastToFrames(document, {
 				action: "ANKI_TRIGGER_EXTRACT",
 				notebookTitle: deckName,
+				triggerId: triggerId,
 			});
 		};
 		return btn;
