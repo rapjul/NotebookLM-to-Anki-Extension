@@ -11,6 +11,7 @@ import {
 	mapCardsToAnkiNotes,
 	findImageUrlsDeep,
 	resolveCardsWithDomImages,
+	findMatchingDomImage,
 } from "../helpers/utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -521,6 +522,33 @@ test("transformer: findImageUrlsDeep", async (t) => {
 		assert.ok(!urls.includes("https://en.wikipedia.org/wiki/Kirchhoff_laws"));
 		assert.ok(!urls.includes("https://example.com/physics/lecture-notes.html"));
 	});
+
+	await t.test(
+		"accepts modern web formats including avif and rejects legacy formats like bmp, ico, and tiff",
+		() => {
+			const mixedMediaData = {
+				images: [
+					"https://example.com/figure1.avif",
+					"https://example.com/figure2.webp",
+					"https://example.com/figure3.png",
+					"https://example.com/legacy1.bmp",
+					"https://example.com/favicon.ico",
+					"https://example.com/scan.tif",
+					"https://example.com/scan.tiff",
+				],
+			};
+
+			const urls = findImageUrlsDeep(mixedMediaData);
+			assert.equal(urls.length, 3);
+			assert.ok(urls.includes("https://example.com/figure1.avif"));
+			assert.ok(urls.includes("https://example.com/figure2.webp"));
+			assert.ok(urls.includes("https://example.com/figure3.png"));
+			assert.ok(!urls.includes("https://example.com/legacy1.bmp"));
+			assert.ok(!urls.includes("https://example.com/favicon.ico"));
+			assert.ok(!urls.includes("https://example.com/scan.tif"));
+			assert.ok(!urls.includes("https://example.com/scan.tiff"));
+		},
+	);
 });
 
 test("transformer: resolveCardsWithDomImages", async (t) => {
@@ -983,6 +1011,138 @@ test("transformer: resolveCardsWithDomImages", async (t) => {
 				resolved[0].diagramUrl,
 				"",
 				"Should not match caption from document-wide searchRoot fallback",
+			);
+		},
+	);
+
+	await t.test(
+		"resolves high-resolution data-src when img.src contains placeholder",
+		() => {
+			const cards = [
+				{
+					question: "Analyze the lazy-loaded diagram",
+					diagramUrl: "",
+					diagramCaption: "High-Res Schematic",
+					hasMediaReference: true,
+				},
+			];
+
+			const mockDom = {
+				querySelectorAll: (selector) => {
+					if (selector.includes("img")) {
+						return [
+							{
+								src: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=",
+								getAttribute: (name) => {
+									if (name === "data-src") {
+										return "https://lh3.googleusercontent.com/high_res_diagram.png";
+									}
+									return null;
+								},
+								parentElement: {
+									querySelector: (subSelector) => {
+										if (subSelector.includes("caption")) {
+											return { textContent: "High-Res Schematic" };
+										}
+										return null;
+									},
+								},
+							},
+						];
+					}
+					return [];
+				},
+			};
+
+			const resolved = resolveCardsWithDomImages(cards, mockDom);
+			assert.equal(resolved.length, 1);
+			assert.equal(
+				resolved[0].diagramUrl,
+				"https://lh3.googleusercontent.com/high_res_diagram.png",
+			);
+		},
+	);
+});
+
+test("transformer: findMatchingDomImage", async (t) => {
+	await t.test(
+		"preserves 1-to-1 matching and skips already assigned DOM images when cards share generic alt text",
+		() => {
+			const img1 = {
+				src: "https://example.com/figure1.png",
+				alt: "Diagram",
+			};
+			const img2 = {
+				src: "https://example.com/figure2.png",
+				alt: "Diagram",
+			};
+			const domImages = [img1, img2];
+			const assignedImages = new Set();
+
+			const card1 = {
+				question: "Card 1 with generic alt",
+				diagramAlt: "Diagram",
+				hasMediaReference: true,
+			};
+			const match1 = findMatchingDomImage(card1, domImages, assignedImages);
+			assert.equal(match1, img1);
+			assignedImages.add(match1);
+
+			const card2 = {
+				question: "Card 2 with generic alt",
+				diagramAlt: "Diagram",
+				hasMediaReference: true,
+			};
+			const match2 = findMatchingDomImage(card2, domImages, assignedImages);
+			assert.equal(match2, img2);
+			assert.notEqual(match1, match2);
+			assignedImages.add(match2);
+
+			const card3 = {
+				question: "Card 3 with generic alt",
+				diagramAlt: "Diagram",
+				hasMediaReference: true,
+			};
+			const match3 = findMatchingDomImage(card3, domImages, assignedImages);
+			assert.equal(match3, null);
+		},
+	);
+
+	await t.test(
+		"prioritizes exact URL match over alt text match",
+		() => {
+			const imgByAlt = {
+				src: "https://example.com/other.png",
+				alt: "Circuit Schematic",
+			};
+			const imgByUrl = {
+				src: "https://example.com/exact-circuit.png",
+				alt: "Unrelated Alt",
+			};
+			const domImages = [imgByAlt, imgByUrl];
+
+			const card = {
+				question: "Analyze circuit",
+				diagramUrl: "https://example.com/exact-circuit.png",
+				diagramAlt: "Circuit Schematic",
+				hasMediaReference: true,
+			};
+
+			const match = findMatchingDomImage(card, domImages);
+			assert.equal(match, imgByUrl);
+		},
+	);
+
+	await t.test(
+		"returns null when inputs are invalid or missing",
+		() => {
+			assert.equal(findMatchingDomImage(null, []), null);
+			assert.equal(findMatchingDomImage({}, null), null);
+			assert.equal(
+				findMatchingDomImage({ question: "No media references" }, [
+					{ src: "https://example.com/img.png", alt: "Img" },
+				]),
+				null,
 			);
 		},
 	);

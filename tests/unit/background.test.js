@@ -1315,4 +1315,69 @@ test("background: media downloading and embedding", async (t) => {
 			}
 		},
 	);
+
+	await t.test(
+		"downloads and persists AVIF format images via storeMediaFile",
+		async () => {
+			const ankiCalls = [];
+			const origFetchHandler = fetchHandler;
+
+			// Construct synthetic AVIF binary buffer (ftypavif box)
+			const avifBytes = new Uint8Array([
+				0x00, 0x00, 0x00, 0x10, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76,
+				0x69, 0x66, 0x00, 0x00, 0x00, 0x00,
+			]);
+
+			fetchHandler = async (url, options) => {
+				if (url.includes("lh3.googleusercontent.com")) {
+					return {
+						ok: true,
+						status: 200,
+						headers: {
+							get: (h) =>
+								h === "content-type" ? "image/avif" : null,
+						},
+						arrayBuffer: async () => avifBytes.buffer,
+					};
+				}
+				const parsed = options?.body ? JSON.parse(options.body) : {};
+				ankiCalls.push(parsed);
+				return origFetchHandler(url, options);
+			};
+
+			try {
+				const cardWithAvifMedia = {
+					question: "What is depicted in this AVIF schematic?",
+					diagramUrl:
+						"https://lh3.googleusercontent.com/schematic.avif",
+					diagramAlt: "AVIF Schematic",
+					hasMediaReference: true,
+					option1: "A",
+					flag1: "True",
+				};
+
+				const response = await sendRuntimeMessage(messageListener, {
+					action: "sendBatchToAnki",
+					deckTitle: "AvifDeck",
+					duplicateAction: "increment",
+					batchData: [cardWithAvifMedia],
+				});
+
+				assert.equal(response.success, true);
+				assert.equal(response.imagesExported, 1);
+
+				const storeMediaCall = ankiCalls.find(
+					(c) =>
+						c.action === "storeMediaFile" &&
+						c.params.filename.endsWith(".avif"),
+				);
+				assert.ok(
+					storeMediaCall,
+					"storeMediaFile should have been called with .avif filename",
+				);
+			} finally {
+				fetchHandler = origFetchHandler;
+			}
+		},
+	);
 });

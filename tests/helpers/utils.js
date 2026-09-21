@@ -97,6 +97,13 @@ export const resolveCardsWithDomImages =
 	globalThis.NotebookLMToAnkiUtils.resolveCardsWithDomImages;
 
 /**
+ * Re-exported findMatchingDomImage utility.
+ * @type {function(object, Array<Element>, Set<Element>=): (Element|null)}
+ */
+export const findMatchingDomImage =
+	globalThis.NotebookLMToAnkiUtils.findMatchingDomImage;
+
+/**
  * Re-exported filterDuplicateNotes utility.
  * @type {function(Array<object>, Set<string>): { notesToSend: Array<object>, skippedCount: number }}
  */

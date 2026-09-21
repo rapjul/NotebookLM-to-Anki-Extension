@@ -328,11 +328,28 @@
 			const cleanQuestion = safePrompt
 				.replace(parsedPrompt.matchedString, "")
 				.trim();
+			let mediaUrl = parsedPrompt.mediaUrl;
+			let alt = parsedPrompt.alt;
+			let caption = parsedPrompt.caption;
+
+			// If indexed reference could not resolve a URL, fall through to candidate sources
+			if (!mediaUrl) {
+				const extraMedia = extractFromAdditionalSources(
+					additionalSources,
+					imageUrls,
+				);
+				if (extraMedia && extraMedia.mediaUrl) {
+					mediaUrl = extraMedia.mediaUrl;
+					alt = alt || extraMedia.alt;
+					caption = caption || extraMedia.caption;
+				}
+			}
+
 			return {
 				cleanQuestion,
-				mediaUrl: parsedPrompt.mediaUrl,
-				alt: parsedPrompt.alt,
-				caption: parsedPrompt.caption,
+				mediaUrl,
+				alt,
+				caption,
 				hasMediaReference: true,
 			};
 		}
@@ -420,7 +437,7 @@
 		}
 		return (
 			/^https?:\/\//i.test(trimmed) &&
-			/\.(png|jpe?g|gif|webp|svg|bmp|avif|ico|tiff?)(\?|#|$)/i.test(
+			/\.(png|jpe?g|gif|webp|svg|avif)(\?|#|$)/i.test(
 				trimmed,
 			)
 		);
@@ -520,17 +537,58 @@
 	}
 
 	/**
+	 * Checks whether an image source URL represents an empty or placeholder asset.
+	 *
+	 * @param {string} url - Image URL to test.
+	 * @returns {boolean} True if source is a placeholder.
+	 */
+	function isPlaceholderImageSrc(url) {
+		if (!url) return true;
+		return (
+			url.startsWith("data:image/svg+xml") ||
+			url.startsWith("data:image/gif") ||
+			/placeholder|spinner|blank|spacer/i.test(url)
+		);
+	}
+
+	/**
+	 * Resolves the highest quality image source from an <img> element.
+	 *
+	 * Prioritizes lazy-load attributes (e.g. data-src) and currentSrc over placeholder src values.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @returns {string} Best available image URL, or empty string.
+	 */
+	function resolveBestImageSrc(img) {
+		const candidateKeys = [
+			"data-src",
+			"data-lazy-src",
+			"data-original",
+			"src",
+		];
+		for (const key of candidateKeys) {
+			const val = (img.getAttribute?.(key) || "").trim();
+			if (val && !isPlaceholderImageSrc(val)) {
+				return val;
+			}
+		}
+
+		const current = (img.currentSrc || img.src || "").trim();
+		if (current && !isPlaceholderImageSrc(current)) {
+			return current;
+		}
+
+		return (img.src || "").trim();
+	}
+
+	/**
 	 * Extracts normalized image attributes (src, alt, caption) from a DOM image element or its container.
 	 *
 	 * @param {Element} img - DOM image element.
 	 * @returns {{ src: string, alt: string, caption: string }|null} Metadata object, or null if invalid or SVG placeholder.
 	 */
 	function extractDomImageMetadata(img) {
-		const src =
-			img.src ||
-			img.getAttribute?.("src") ||
-			img.getAttribute?.("data-src") ||
-			"";
+		const src = resolveBestImageSrc(img);
 		if (!src || src.startsWith("data:image/svg+xml")) return null;
 
 		const alt = (
@@ -663,6 +721,62 @@
 
 			return card;
 		});
+	}
+
+	/**
+	 * Matches a DOM image element against a card by exact source URL.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @param {string} targetUrl - Target diagram URL.
+	 * @returns {boolean} True if the image source matches.
+	 */
+	function matchesDomImageUrl(img, targetUrl) {
+		if (!targetUrl || !img) return false;
+		const src = (img.src || img.getAttribute?.("src") || "").trim();
+		return src === targetUrl.trim();
+	}
+
+	/**
+	 * Matches a DOM image element against a card by trimmed alt text.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @param {string} targetAlt - Target alt text.
+	 * @returns {boolean} True if the image alt text matches.
+	 */
+	function matchesDomImageAlt(img, targetAlt) {
+		if (!targetAlt || !img) return false;
+		const imgAlt = (img.alt || img.getAttribute?.("alt") || "").trim();
+		return imgAlt === targetAlt.trim();
+	}
+
+	/**
+	 * Finds a matching unassigned DOM image element for a card.
+	 *
+	 * Prioritizes exact URL matches before falling back to alt text comparisons.
+	 *
+	 * @param {object} card - Flashcard object.
+	 * @param {Array<Element>} domImages - List of candidate image elements.
+	 * @param {Set<Element>} [assignedImages] - Set of already assigned image elements.
+	 * @returns {Element|null} Matched image element or null.
+	 */
+	function findMatchingDomImage(card, domImages, assignedImages = new Set()) {
+		if (!card || !Array.isArray(domImages)) return null;
+
+		if (card.diagramUrl) {
+			for (const img of domImages) {
+				if (assignedImages?.has(img)) continue;
+				if (matchesDomImageUrl(img, card.diagramUrl)) return img;
+			}
+		}
+
+		if (card.diagramAlt) {
+			for (const img of domImages) {
+				if (assignedImages?.has(img)) continue;
+				if (matchesDomImageAlt(img, card.diagramAlt)) return img;
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -1094,6 +1208,7 @@
 	 *   normalizeBlankAnswer: function((string|null|undefined)): string,
 	 *   findImageUrlsDeep: function(*, Set<object>=): Array<string>,
 	 *   resolveCardsWithDomImages: function(Array<object>, (Document|Element|null)=): Array<object>,
+	 *   findMatchingDomImage: function(object, Array<Element>, Set<Element>=): (Element|null),
 	 *   parseQuizJson: function(string, (string|Array<string>|null|undefined)=): { quizData: Array<object>, title: (string|undefined), topicsCovered: Array<string>, imageUrls: Array<string> },
 	 *   mapQuizDataToCards: function(Array<object>, Array<string>=): Array<object>,
 	 *   mapCardsToAnkiNotes: function(Array<object>, string, string=, Array<string>=): Array<object>,
@@ -1112,6 +1227,7 @@
 		normalizeBlankAnswer,
 		findImageUrlsDeep,
 		resolveCardsWithDomImages,
+		findMatchingDomImage,
 		parseQuizJson,
 		mapQuizDataToCards,
 		mapCardsToAnkiNotes,

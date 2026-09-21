@@ -393,23 +393,19 @@
 			// 3. For any card with a resolved diagram URL or matching DOM image, attempt Base64 extraction
 			if (typeof document !== "undefined") {
 				const domImages = Array.from(document.querySelectorAll("img"));
+				const assignedBase64Images = new Set();
 				cards = cards.map((card) => {
 					if (card.imageBase64) return card;
 
-					const matchingImg = domImages.find((img) => {
-						const src = img.src || img.getAttribute("src") || "";
-						if (card.diagramUrl && src === card.diagramUrl) return true;
-						if (
-							card.diagramAlt &&
-							img.alt &&
-							img.alt.trim() === card.diagramAlt.trim()
-						) {
-							return true;
-						}
-						return false;
-					});
+					const matchingImg =
+						NotebookLMToAnkiUtils.findMatchingDomImage(
+							card,
+							domImages,
+							assignedBase64Images,
+						);
 
 					if (matchingImg) {
+						assignedBase64Images.add(matchingImg);
 						const extracted = extractDomImageBase64(matchingImg);
 						if (extracted) {
 							return {

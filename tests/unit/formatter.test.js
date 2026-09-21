@@ -340,12 +340,38 @@ test("formatter: extractQuestionMedia", async (t) => {
 				'Look at this diagram: <img src="https://example.com/graph.png" alt="Force Diagram"> What is the slope?';
 			const result = extractQuestionMedia(promptWithImg, []);
 
-			assert.equal(
-				result.cleanQuestion,
-				"Look at this diagram:  What is the slope?",
-			);
+			assert.equal(result.cleanQuestion, "Look at this diagram:  What is the slope?");
 			assert.equal(result.mediaUrl, "https://example.com/graph.png");
 			assert.equal(result.alt, "Force Diagram");
+			assert.equal(result.hasMediaReference, true);
+		},
+	);
+
+	await t.test(
+		"falls through to additionalSources when indexed reference in prompt is missing from imageUrls",
+		() => {
+			const promptWithMissingIndex =
+				'Analyze this circuit:\n\n![Circuit Schematic](image_reference_index:5 "Schematic.png")';
+			const imageUrls = [
+				"https://example.com/unrelated1.png",
+				"https://example.com/unrelated2.png",
+			];
+			const additionalSources = [
+				"https://example.com/fallback-schematic.png",
+			];
+			const result = extractQuestionMedia(
+				promptWithMissingIndex,
+				imageUrls,
+				additionalSources,
+			);
+
+			assert.equal(result.cleanQuestion, "Analyze this circuit:");
+			assert.equal(
+				result.mediaUrl,
+				"https://example.com/fallback-schematic.png",
+			);
+			assert.equal(result.alt, "Circuit Schematic");
+			assert.equal(result.caption, "Schematic.png");
 			assert.equal(result.hasMediaReference, true);
 		},
 	);

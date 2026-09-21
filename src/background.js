@@ -282,6 +282,31 @@ function isWebpSignature(bytes) {
 }
 
 /**
+ * Inspects a binary buffer to determine whether it matches the AVIF (ISOBMFF) signature.
+ *
+ * Checks for 'ftyp' box type followed by major brand 'avif' or 'avis'.
+ *
+ * @param {Uint8Array} bytes - Binary buffer bytes.
+ * @returns {boolean} True if binary header matches AVIF signature.
+ */
+function isAvifSignature(bytes) {
+	if (bytes.length < 12) return false;
+	const isFtyp =
+		bytes[4] === 0x66 &&
+		bytes[5] === 0x74 &&
+		bytes[6] === 0x79 &&
+		bytes[7] === 0x70;
+	if (!isFtyp) return false;
+
+	return (
+		bytes[8] === 0x61 &&
+		bytes[9] === 0x76 &&
+		bytes[10] === 0x69 &&
+		(bytes[11] === 0x66 || bytes[11] === 0x73)
+	);
+}
+
+/**
  * Inspects a binary sample to verify whether it represents a valid SVG element.
  *
  * Rejects HTML documents, doctype declarations, and non-SVG text payloads.
@@ -315,7 +340,7 @@ function isSvgSample(bytes) {
  * Rejects HTML, XML, or non-image payloads to prevent storing corrupted assets.
  *
  * @param {ArrayBuffer} buffer - Raw binary buffer of the downloaded asset.
- * @returns {string|null} Image file extension ('png', 'jpg', 'gif', 'webp', 'svg') or null if invalid.
+ * @returns {string|null} Image file extension ('png', 'jpg', 'gif', 'webp', 'avif', 'svg') or null if invalid.
  */
 function detectImageFormatFromBuffer(buffer) {
 	if (!buffer || buffer.byteLength < 4) return null;
@@ -325,6 +350,7 @@ function detectImageFormatFromBuffer(buffer) {
 	if (isJpegSignature(bytes)) return "jpg";
 	if (isGifSignature(bytes)) return "gif";
 	if (isWebpSignature(bytes)) return "webp";
+	if (isAvifSignature(bytes)) return "avif";
 	if (isSvgSample(bytes)) return "svg";
 
 	return null;
