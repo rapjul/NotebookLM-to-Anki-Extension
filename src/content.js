@@ -97,6 +97,50 @@
 	 * Extracts Base64 image payload and image format from a loaded HTMLImageElement using an off-screen canvas.
 	 *
 	 * Constrains canvas dimensions to maxDimension (default 2048px) and prioritizes WebP compression
+	/**
+	 * Calculates aspect-ratio-preserving dimensions bounded by a maximum dimension.
+	 *
+	 * @param {number} width - Original natural width.
+	 * @param {number} height - Original natural height.
+	 * @param {number} maxDimension - Maximum allowed width or height.
+	 * @returns {{ width: number, height: number }} Scaled dimensions.
+	 */
+	function calculateBoundedDimensions(width, height, maxDimension) {
+		if (width <= maxDimension && height <= maxDimension) {
+			return { width, height };
+		}
+		if (width >= height) {
+			return {
+				width: maxDimension,
+				height: Math.round((height * maxDimension) / width),
+			};
+		}
+		return {
+			width: Math.round((width * maxDimension) / height),
+			height: maxDimension,
+		};
+	}
+
+	/**
+	 * Serializes a canvas element to a data URL, preferring WebP with PNG fallback.
+	 *
+	 * @param {HTMLCanvasElement} canvas - The canvas element to serialize.
+	 * @returns {string|null} Valid data URL or null if failed or payload exceeds 5MB.
+	 */
+	function serializeCanvasToDataUrl(canvas) {
+		let dataUrl = canvas.toDataURL("image/webp", 0.85);
+		if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
+			dataUrl = canvas.toDataURL("image/png");
+		}
+		if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
+		if (dataUrl.length > 5 * 1024 * 1024) return null;
+		return dataUrl;
+	}
+
+	/**
+	 * Extracts Base64-encoded image data from a rendered DOM image element using an in-memory canvas.
+	 *
+	 * Bounds image dimensions to maxDimension (default 2048px) and prioritizes lightweight WebP encoding (0.85 quality)
 	 * with automatic PNG fallback to minimize memory footprint and avoid IPC message bottlenecks.
 	 *
 	 * @param {HTMLImageElement} img - The image element to extract data from.
@@ -110,17 +154,11 @@
 				return null;
 			}
 
-			let width = img.naturalWidth;
-			let height = img.naturalHeight;
-			if (width > maxDimension || height > maxDimension) {
-				if (width >= height) {
-					height = Math.round((height * maxDimension) / width);
-					width = maxDimension;
-				} else {
-					width = Math.round((width * maxDimension) / height);
-					height = maxDimension;
-				}
-			}
+			const { width, height } = calculateBoundedDimensions(
+				img.naturalWidth,
+				img.naturalHeight,
+				maxDimension,
+			);
 
 			const canvas = document.createElement("canvas");
 			canvas.width = width;
@@ -130,15 +168,8 @@
 
 			ctx.drawImage(img, 0, 0, width, height);
 
-			// Attempt WebP serialization at 0.85 quality; fallback to PNG if WebP is unsupported
-			let dataUrl = canvas.toDataURL("image/webp", 0.85);
-			if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
-				dataUrl = canvas.toDataURL("image/png");
-			}
-			if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
-
-			// Enforce a sensible 5MB Base64 payload limit per individual image
-			if (dataUrl.length > 5 * 1024 * 1024) return null;
+			const dataUrl = serializeCanvasToDataUrl(canvas);
+			if (!dataUrl) return null;
 
 			const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
 			if (!match) return null;
@@ -947,7 +978,9 @@
 
 	/**
 	 * Attempts to retrieve the quiz title from the DOM.
+	 *
 	 * Checks the current document and the top document if within an iframe.
+	 *
 	 * @returns {string|null} The extracted quiz title, or null if not found.
 	 */
 	function getQuizTitle() {

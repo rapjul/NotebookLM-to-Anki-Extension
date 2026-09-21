@@ -705,64 +705,55 @@ function splitSelectorParts(selector) {
 }
 
 /**
- * Checks whether a given element matches a supported CSS selector.
+ * Evaluates whether an element matches a compound descendant selector.
  *
- * @param {MockElement} element - The element to check.
- * @param {string} selector - The CSS selector string.
- * @returns {boolean} True if the element matches the selector.
+ * @param {MockElement} element - Target DOM element.
+ * @param {string[]} parts - Split selector parts (ancestor and descendant).
+ * @returns {boolean} True if descendant match is verified.
  */
-function matchesSelector(element, selector) {
-	const trimmed = selector.trim();
-
-	// Compound descendant selector: e.g. ".notebooklm-to-anki-btn-label span:last-child"
-	const parts = splitSelectorParts(trimmed);
-	if (parts.length > 1) {
-		const lastPart = parts[parts.length - 1];
-		if (!matchesSelector(element, lastPart)) {
-			return false;
-		}
-		let parent = element.parentElement;
-		while (parent && parent.nodeType === 1) {
-			if (
-				matchesSelector(/** @type {MockElement} */ (parent), parts[0])
-			) {
-				return true;
-			}
-			parent = parent.parentElement;
-		}
+function matchCompoundSelector(element, parts) {
+	const lastPart = parts[parts.length - 1];
+	if (!matchesSelector(element, lastPart)) {
 		return false;
 	}
-
-	// Pseudo-class :last-child
-	if (trimmed.endsWith(":last-child")) {
-		const baseSelector = trimmed.replace(":last-child", "");
-		if (baseSelector && !matchesSelector(element, baseSelector)) {
-			return false;
+	let parent = element.parentElement;
+	while (parent && parent.nodeType === 1) {
+		if (
+			matchesSelector(/** @type {MockElement} */ (parent), parts[0])
+		) {
+			return true;
 		}
-		if (!element.parentElement) return true;
-		const siblings = element.parentElement.children;
-		return siblings[siblings.length - 1] === element;
+		parent = parent.parentElement;
 	}
+	return false;
+}
 
-	// ID selector: #id
-	if (trimmed.startsWith("#")) {
-		return element.id === trimmed.slice(1);
+/**
+ * Evaluates whether an element matches pseudo-class selectors like :last-child.
+ *
+ * @param {MockElement} element - Target DOM element.
+ * @param {string} trimmed - Trimmed selector string.
+ * @returns {boolean} True if element matches pseudo-class condition.
+ */
+function matchPseudoClassSelector(element, trimmed) {
+	if (!trimmed.endsWith(":last-child")) return false;
+	const baseSelector = trimmed.replace(":last-child", "");
+	if (baseSelector && !matchesSelector(element, baseSelector)) {
+		return false;
 	}
+	if (!element.parentElement) return true;
+	const siblings = element.parentElement.children;
+	return siblings[siblings.length - 1] === element;
+}
 
-	// Class selector: .class
-	if (trimmed.startsWith(".")) {
-		return element.classList.contains(trimmed.slice(1));
-	}
-
-	// Tag with class: tag.class (e.g. div.flex, input.artifact-title)
-	const tagClassMatch = trimmed.match(/^([a-zA-Z0-9]+)\.([a-zA-Z0-9-_]+)$/);
-	if (tagClassMatch) {
-		return (
-			element.tagName === tagClassMatch[1].toUpperCase() &&
-			element.classList.contains(tagClassMatch[2])
-		);
-	}
-
+/**
+ * Evaluates whether an element matches attribute selectors [attr="val"] or [attr].
+ *
+ * @param {MockElement} element - Target DOM element.
+ * @param {string} trimmed - Trimmed selector string.
+ * @returns {boolean} True if element matches attribute selector.
+ */
+function matchAttributeSelector(element, trimmed) {
 	// Attribute selector: tag[attr="val"] or [attr="val"]
 	const attrExactMatch = trimmed.match(
 		/^(?:([a-zA-Z0-9]+))?\[([a-zA-Z0-9-_:]+)=["'](.*?)["']\]$/,
@@ -783,12 +774,71 @@ function matchesSelector(element, selector) {
 		return element.hasAttribute(attrName);
 	}
 
+	return false;
+}
+
+/**
+ * Evaluates whether an element matches class, ID, or tag name selectors.
+ *
+ * @param {MockElement} element - Target DOM element.
+ * @param {string} trimmed - Trimmed selector string.
+ * @returns {boolean} True if element matches selector.
+ */
+function matchClassOrTagSelector(element, trimmed) {
+	// ID selector: #id
+	if (trimmed.startsWith("#")) {
+		return element.id === trimmed.slice(1);
+	}
+
+	// Class selector: .class
+	if (trimmed.startsWith(".")) {
+		return element.classList.contains(trimmed.slice(1));
+	}
+
+	// Tag with class: tag.class (e.g. div.flex, input.artifact-title)
+	const tagClassMatch = trimmed.match(/^([a-zA-Z0-9]+)\.([a-zA-Z0-9-_]+)$/);
+	if (tagClassMatch) {
+		return (
+			element.tagName === tagClassMatch[1].toUpperCase() &&
+			element.classList.contains(tagClassMatch[2])
+		);
+	}
+
 	// Bare tag name: tag
 	if (/^[a-zA-Z0-9]+$/.test(trimmed)) {
 		return element.tagName === trimmed.toUpperCase();
 	}
 
 	return false;
+}
+
+/**
+ * Checks whether a given element matches a supported CSS selector.
+ *
+ * @param {MockElement} element - The element to check.
+ * @param {string} selector - The CSS selector string.
+ * @returns {boolean} True if the element matches the selector.
+ */
+function matchesSelector(element, selector) {
+	const trimmed = selector.trim();
+
+	// Compound descendant selector: e.g. ".notebooklm-to-anki-btn-label span:last-child"
+	const parts = splitSelectorParts(trimmed);
+	if (parts.length > 1) {
+		return matchCompoundSelector(element, parts);
+	}
+
+	// Pseudo-class :last-child
+	if (trimmed.endsWith(":last-child")) {
+		return matchPseudoClassSelector(element, trimmed);
+	}
+
+	// Attribute selector: tag[attr="val"] or [attr="val"] or tag[attr]
+	if (trimmed.includes("[")) {
+		return matchAttributeSelector(element, trimmed);
+	}
+
+	return matchClassOrTagSelector(element, trimmed);
 }
 
 /**
