@@ -9,6 +9,8 @@ import {
 	parseQuizJson,
 	mapQuizDataToCards,
 	mapCardsToAnkiNotes,
+	findImageUrlsDeep,
+	resolveCardsWithDomImages,
 } from "../helpers/utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -90,6 +92,61 @@ test("transformer: parseQuizJson", async (t) => {
 			assert.equal(
 				imageUrls[0],
 				"https://lh3.googleusercontent.com/test-diagram-source-voltage.png",
+			);
+		},
+	);
+
+	await t.test(
+		"resolves imageUrls from mostRecentQuery.imageUrls when top-level imageUrls is absent",
+		() => {
+			const payload = JSON.stringify({
+				mostRecentQuery: {
+					quiz: [
+						{
+							type: "multiple_choice",
+							question: "What is KVL?",
+							answerOptions: [{ text: "Law", isCorrect: true }],
+						},
+					],
+					imageUrls: [
+						"https://lh3.googleusercontent.com/notebooklm/nested_query_img.png",
+					],
+				},
+			});
+			const { quizData, imageUrls } = parseQuizJson(payload);
+
+			assert.equal(quizData.length, 1);
+			assert.deepEqual(imageUrls, [
+				"https://lh3.googleusercontent.com/notebooklm/nested_query_img.png",
+			]);
+		},
+	);
+
+	await t.test(
+		"resolves imageUrls from image_urls snake_case and deeply nested objects",
+		() => {
+			const payload = JSON.stringify({
+				quiz: [
+					{
+						type: "multiple_choice",
+						question: "What is Ohm's Law?",
+						answerOptions: [{ text: "V=IR", isCorrect: true }],
+					},
+				],
+				nestedSection: {
+					deepTree: {
+						image_urls: [
+							"https://lh3.googleusercontent.com/deep/circuit.png",
+						],
+					},
+				},
+			});
+			const { imageUrls } = parseQuizJson(payload);
+
+			assert.equal(imageUrls.length, 1);
+			assert.equal(
+				imageUrls[0],
+				"https://lh3.googleusercontent.com/deep/circuit.png",
 			);
 		},
 	);
@@ -276,6 +333,45 @@ test("transformer: mapQuizDataToCards", async (t) => {
 			assert.equal(ternaryCard.flag4, "False");
 		},
 	);
+
+	await t.test(
+		"maps question-level q.imageUrls to diagramUrl and diagramAlt when q.question is plain text",
+		() => {
+			const quizQuestions = [
+				{
+					type: "multiple_choice",
+					question:
+						"Using the circuit shown, if V_2 = 4/3 V, what is the voltage across the 8 Ω resistor (v_1)?",
+					imageUrls: [
+						'![A circuit diagram for Example 4](image_reference_index:0 "Circuit_Analysis_Chapter_1.pdf")',
+					],
+					answerOptions: [
+						{ text: "1.33 V", isCorrect: false },
+						{ text: "-2.67 V", isCorrect: true },
+					],
+				},
+			];
+			const pageImageUrls = [
+				"https://lh3.googleusercontent.com/notebooklm/AKYWMX_circuit_diagram.png",
+			];
+
+			const cards = mapQuizDataToCards(quizQuestions, pageImageUrls);
+
+			assert.equal(cards.length, 1);
+			const card = cards[0];
+			assert.equal(
+				card.question,
+				"Using the circuit shown, if V_2 = 4/3 V, what is the voltage across the 8 Ω resistor (v_1)?",
+			);
+			assert.equal(
+				card.diagramUrl,
+				"https://lh3.googleusercontent.com/notebooklm/AKYWMX_circuit_diagram.png",
+			);
+			assert.equal(card.diagramAlt, "A circuit diagram for Example 4");
+			assert.equal(card.diagramCaption, "Circuit_Analysis_Chapter_1.pdf");
+			assert.equal(card.hasMediaReference, true);
+		},
+	);
 });
 
 test("transformer: mapCardsToAnkiNotes", async (t) => {
@@ -360,4 +456,405 @@ test("transformer: mapCardsToAnkiNotes", async (t) => {
 			]);
 		},
 	);
+});
+
+test("transformer: findImageUrlsDeep", async (t) => {
+	await t.test(
+		"recursively traverses complex nested objects and extracts unique image URLs",
+		() => {
+			const nestedData = {
+				level1: {
+					level2: {
+						imageUrls: [
+							"https://lh3.googleusercontent.com/img1.png",
+							"https://lh3.googleusercontent.com/img2.png",
+						],
+						other: "test",
+					},
+					directImage: "https://lh3.googleusercontent.com/img3.png",
+				},
+				unrelated: 42,
+			};
+
+			const urls = findImageUrlsDeep(nestedData);
+			assert.equal(urls.length, 3);
+			assert.ok(urls.includes("https://lh3.googleusercontent.com/img1.png"));
+			assert.ok(urls.includes("https://lh3.googleusercontent.com/img2.png"));
+			assert.ok(urls.includes("https://lh3.googleusercontent.com/img3.png"));
+		},
+	);
+
+	await t.test("handles circular references gracefully without stack overflow", () => {
+		const objA = { name: "A" };
+		const objB = {
+			name: "B",
+			imageUrls: ["https://lh3.googleusercontent.com/circle.png"],
+		};
+		objA.b = objB;
+		objB.a = objA;
+
+		const urls = findImageUrlsDeep(objA);
+		assert.equal(urls.length, 1);
+		assert.equal(urls[0], "https://lh3.googleusercontent.com/circle.png");
+	});
+});
+
+test("transformer: resolveCardsWithDomImages", async (t) => {
+	await t.test("matches cards with missing diagramUrl against DOM images by caption", () => {
+		const cards = [
+			{
+				question: "What is KVL?",
+				diagramUrl: "",
+				diagramAlt: "Circuit Diagram",
+				diagramCaption: "Circuit_Analysis_Chapter_1.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		// Mock DOM environment
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/resolved_circuit.png",
+							alt: "Circuit Diagram",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Circuit_Analysis_Chapter_1.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/resolved_circuit.png",
+		);
+		assert.equal(resolved[0].diagramCaption, "Circuit_Analysis_Chapter_1.pdf");
+	});
+
+	await t.test("leaves cards with existing diagramUrl unchanged", () => {
+		const cards = [
+			{
+				question: "What is Ohm's Law?",
+				diagramUrl: "https://example.com/existing.png",
+				diagramAlt: "Alt",
+				diagramCaption: "Caption",
+				hasMediaReference: true,
+			},
+		];
+
+		const resolved = resolveCardsWithDomImages(cards, null);
+		assert.equal(resolved[0].diagramUrl, "https://example.com/existing.png");
+	});
+
+	await t.test("matches filenames containing spaces in both card caption and DOM", () => {
+		const cards = [
+			{
+				question: "What is KVL?",
+				diagramUrl: "",
+				diagramAlt: "Circuit Diagram",
+				diagramCaption: "Circuit Analysis Chapter 1.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/resolved_with_spaces.png",
+							alt: "Circuit Diagram",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Circuit Analysis Chapter 1.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/resolved_with_spaces.png",
+		);
+		assert.equal(resolved[0].diagramCaption, "Circuit Analysis Chapter 1.pdf");
+	});
+
+	await t.test("matches card caption with underscores against DOM caption with spaces", () => {
+		const cards = [
+			{
+				question: "What is KCL?",
+				diagramUrl: "",
+				diagramAlt: "Nodal Diagram",
+				diagramCaption: "Circuit_Analysis_Chapter_1.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/spaces_caption.png",
+							alt: "Nodal Diagram",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Circuit Analysis Chapter 1.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/spaces_caption.png",
+		);
+	});
+
+	await t.test("matches card caption with spaces against DOM caption with underscores", () => {
+		const cards = [
+			{
+				question: "What is Ohm's Law?",
+				diagramUrl: "",
+				diagramAlt: "Schematic",
+				diagramCaption: "Basic Circuit Theory.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/underscores_caption.png",
+							alt: "Schematic",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Basic_Circuit_Theory.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/underscores_caption.png",
+		);
+	});
+
+	await t.test("matches card caption with URL-encoded spaces (%20)", () => {
+		const cards = [
+			{
+				question: "What is the equivalent resistance?",
+				diagramUrl: "",
+				diagramAlt: "Resistor Network",
+				diagramCaption: "Resistor%20Network%20Guide.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/percent20_resolved.png",
+							alt: "Resistor Network",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Resistor Network Guide.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/percent20_resolved.png",
+		);
+	});
+
+	await t.test("matches caption with casing differences and surrounding text in DOM", () => {
+		const cards = [
+			{
+				question: "Find the Thevenin equivalent:",
+				diagramUrl: "",
+				diagramAlt: "Thevenin",
+				diagramCaption: "thevenin theorem.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/thevenin.png",
+							alt: "Thevenin",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Source: Thevenin Theorem.pdf (Page 45)" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/thevenin.png",
+		);
+	});
+
+	await t.test("matches by alt text containing spaces when caption is omitted", () => {
+		const cards = [
+			{
+				question: "What is shown in the image?",
+				diagramUrl: "",
+				diagramAlt: "Kirchhoff Voltage Law Loop Diagram",
+				diagramCaption: "",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/alt_matched.png",
+							alt: "Kirchhoff Voltage Law Loop Diagram",
+							parentElement: {
+								querySelector: () => null,
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 1);
+		assert.equal(
+			resolved[0].diagramUrl,
+			"https://lh3.googleusercontent.com/alt_matched.png",
+		);
+	});
+
+	await t.test("disambiguates multiple cards and images with filenames containing spaces", () => {
+		const cards = [
+			{
+				question: "Question 1",
+				diagramUrl: "",
+				diagramAlt: "Diag 1",
+				diagramCaption: "Chapter 1 Intro.pdf",
+				hasMediaReference: true,
+			},
+			{
+				question: "Question 2",
+				diagramUrl: "",
+				diagramAlt: "Diag 2",
+				diagramCaption: "Chapter 2 Advanced.pdf",
+				hasMediaReference: true,
+			},
+		];
+
+		const mockDom = {
+			querySelectorAll: (selector) => {
+				if (selector.includes("img")) {
+					return [
+						{
+							src: "https://lh3.googleusercontent.com/ch2.png",
+							alt: "Diag 2",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Chapter 2 Advanced.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+						{
+							src: "https://lh3.googleusercontent.com/ch1.png",
+							alt: "Diag 1",
+							parentElement: {
+								querySelector: (subSelector) => {
+									if (subSelector.includes("caption")) {
+										return { textContent: "Chapter 1 Intro.pdf" };
+									}
+									return null;
+								},
+							},
+						},
+					];
+				}
+				return [];
+			},
+		};
+
+		const resolved = resolveCardsWithDomImages(cards, mockDom);
+		assert.equal(resolved.length, 2);
+		assert.equal(resolved[0].diagramUrl, "https://lh3.googleusercontent.com/ch1.png");
+		assert.equal(resolved[1].diagramUrl, "https://lh3.googleusercontent.com/ch2.png");
+	});
 });

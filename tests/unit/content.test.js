@@ -893,4 +893,63 @@ test("content: extracted cards batch dispatch", async (t) => {
 			});
 		},
 	);
+
+	await t.test(
+		"handleExtractedData passes imagesFound to sendBatchToAnki runtime message",
+		async () => {
+			/** @type {Array<object>} */
+			const sentMessages = [];
+
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					sentMessages.push(msg);
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({
+							success: true,
+							count: 1,
+							skipped: 0,
+							imagesFound: 1,
+							imagesExported: 1,
+						});
+						return true;
+					}
+				},
+			];
+
+			mockDOM.window.postMessage({
+				action: "ANKI_EXTRACTED_DATA",
+				cards: [
+					{
+						question: "Circuit question with image",
+						diagramUrl: "https://lh3.googleusercontent.com/circuit.png",
+						hasMediaReference: true,
+					},
+				],
+				deckTitle: "NotebookLM::EE::Quizzes::Images",
+				nbTitle: "EE",
+				quizTitle: "Images",
+				imagesFound: 1,
+				imagesResolved: 1,
+			});
+
+			await new Promise((resolve) => {
+				const check = () => {
+					const sendMsg = sentMessages.find(
+						(m) => m.action === "sendBatchToAnki",
+					);
+					if (sendMsg) {
+						assert.equal(sendMsg.imagesFound, 1);
+						resolve();
+					} else {
+						setTimeout(check, 10);
+					}
+				};
+				check();
+			});
+		},
+	);
 });

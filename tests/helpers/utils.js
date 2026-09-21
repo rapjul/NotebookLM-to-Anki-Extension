@@ -83,6 +83,20 @@ export const normalizeQuestionText =
 	globalThis.NotebookLMToAnkiUtils.normalizeQuestionText;
 
 /**
+ * Re-exported findImageUrlsDeep utility.
+ * @type {function(*, Set<object>=): Array<string>}
+ */
+export const findImageUrlsDeep =
+	globalThis.NotebookLMToAnkiUtils.findImageUrlsDeep;
+
+/**
+ * Re-exported resolveCardsWithDomImages utility.
+ * @type {function(Array<object>, (Document|Element|null)=): Array<object>}
+ */
+export const resolveCardsWithDomImages =
+	globalThis.NotebookLMToAnkiUtils.resolveCardsWithDomImages;
+
+/**
  * Re-exported filterDuplicateNotes utility.
  * @type {function(Array<object>, Set<string>): { notesToSend: Array<object>, skippedCount: number }}
  */

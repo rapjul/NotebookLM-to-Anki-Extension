@@ -1188,6 +1188,8 @@ test("background: media downloading and embedding", async (t) => {
 			});
 
 			assert.equal(response.success, true);
+			assert.equal(response.imagesFound, 1);
+			assert.equal(response.imagesExported, 1);
 
 			const mediaCall = ankiCalls.find(
 				(c) =>
@@ -1217,6 +1219,43 @@ test("background: media downloading and embedding", async (t) => {
 					`<img src="${mediaCall.params.filename}" alt="Pre-resolved Circuit Diagram" title="Pre-resolved Circuit Diagram">`,
 				),
 			);
+		},
+	);
+
+	await t.test(
+		"reports imagesFound and imagesExported counts accurately in response envelope",
+		async () => {
+			const mixedBatch = [
+				{
+					question: "Q1 with valid media",
+					diagramUrl: "https://lh3.googleusercontent.com/q1.png",
+					imageBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+					imageFormat: "png",
+					diagramAlt: "Alt1",
+					hasMediaReference: true,
+					option1: "A",
+					flag1: "True",
+				},
+				{
+					question: "Q2 without media",
+					diagramUrl: "",
+					hasMediaReference: false,
+					option1: "B",
+					flag1: "True",
+				},
+			];
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "ReportDeck",
+				duplicateAction: "increment",
+				batchData: mixedBatch,
+				imagesFound: 1,
+			});
+
+			assert.equal(response.success, true);
+			assert.equal(response.imagesFound, 1);
+			assert.equal(response.imagesExported, 1);
 		},
 	);
 });

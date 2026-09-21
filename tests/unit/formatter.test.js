@@ -289,6 +289,64 @@ test("formatter: extractQuestionMedia", async (t) => {
 			assert.equal(result.mediaUrl, "");
 			assert.equal(result.alt, "");
 			assert.equal(result.caption, "");
+			assert.equal(result.hasMediaReference, false);
+		},
+	);
+
+	await t.test(
+		"extracts media from additionalSources array when prompt is plain text",
+		() => {
+			const plainPrompt = "Using the circuit shown, what is the voltage?";
+			const additional = [
+				'![A circuit diagram for Example 4](image_reference_index:0 "Circuit_Analysis_Chapter_1.pdf")',
+			];
+			const imageUrls = [
+				"https://lh3.googleusercontent.com/notebooklm/sample_circuit.png",
+			];
+			const result = extractQuestionMedia(plainPrompt, imageUrls, additional);
+
+			assert.equal(result.cleanQuestion, plainPrompt);
+			assert.equal(
+				result.mediaUrl,
+				"https://lh3.googleusercontent.com/notebooklm/sample_circuit.png",
+			);
+			assert.equal(result.alt, "A circuit diagram for Example 4");
+			assert.equal(result.caption, "Circuit_Analysis_Chapter_1.pdf");
+			assert.equal(result.hasMediaReference, true);
+		},
+	);
+
+	await t.test(
+		"preserves alt and caption and flags hasMediaReference when imageUrls is empty",
+		() => {
+			const plainPrompt = "Using the circuit shown, calculate current.";
+			const additional = [
+				'![Circuit Schematic](image_reference_index:0 "Circuit_Diagram.pdf")',
+			];
+			const result = extractQuestionMedia(plainPrompt, [], additional);
+
+			assert.equal(result.cleanQuestion, plainPrompt);
+			assert.equal(result.mediaUrl, "");
+			assert.equal(result.alt, "Circuit Schematic");
+			assert.equal(result.caption, "Circuit_Diagram.pdf");
+			assert.equal(result.hasMediaReference, true);
+		},
+	);
+
+	await t.test(
+		"extracts media from inline HTML img tag in prompt",
+		() => {
+			const promptWithImg =
+				'Look at this diagram: <img src="https://example.com/graph.png" alt="Force Diagram"> What is the slope?';
+			const result = extractQuestionMedia(promptWithImg, []);
+
+			assert.equal(
+				result.cleanQuestion,
+				"Look at this diagram:  What is the slope?",
+			);
+			assert.equal(result.mediaUrl, "https://example.com/graph.png");
+			assert.equal(result.alt, "Force Diagram");
+			assert.equal(result.hasMediaReference, true);
 		},
 	);
 });
