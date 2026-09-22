@@ -287,7 +287,7 @@ test("content: data miner detection and batch extraction", async (t) => {
 			});
 
 			await flushPromises();
-			await new Promise((resolve) => setTimeout(resolve, 30));
+			await new Promise((resolve) => origSetTimeout(resolve, 30));
 
 			mockDOM.window.removeEventListener("message", messageHandler);
 			assert.equal(

@@ -17,6 +17,7 @@
     "test:coverage": "node --test --experimental-test-coverage tests/**/*.test.js"
   },
   "devDependencies": {
+    "acorn": "^8.18.0",
     "web-ext": "^10.6.0"
   }
 }
