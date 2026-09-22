@@ -406,14 +406,26 @@
 
 					if (matchingImg) {
 						assignedBase64Images.add(matchingImg);
-						const extracted = extractDomImageBase64(matchingImg);
-						if (extracted) {
-							return {
-								...card,
-								diagramUrl: card.diagramUrl || matchingImg.src,
-								imageBase64: extracted.base64,
-								imageFormat: extracted.format,
-							};
+						const renderedSrc = (
+							matchingImg.currentSrc ||
+							matchingImg.src ||
+							""
+						).trim();
+						if (
+							!NotebookLMToAnkiUtils.isPlaceholderImageSrc(
+								renderedSrc,
+							)
+						) {
+							const extracted = extractDomImageBase64(matchingImg);
+							if (extracted) {
+								return {
+									...card,
+									diagramUrl:
+										card.diagramUrl || matchingImg.src,
+									imageBase64: extracted.base64,
+									imageFormat: extracted.format,
+								};
+							}
 						}
 					}
 					return card;

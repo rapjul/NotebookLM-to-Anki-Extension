@@ -123,19 +123,53 @@
 	}
 
 	/**
-	 * Extracts inline markdown image references (e.g. `![alt](image_reference_index:0 "caption")`),
-	 * direct URLs, or HTML image tags from question text or candidate media sources, cleans the prompt,
-	 * and resolves the image URL from the provided array.
+	 * Normalizes a list of candidate image URLs, resolving objects ({url, src, imageUrl, link})
+	 * into trimmed string URLs while preserving array indexing.
 	 *
-	 * @param {string|null|undefined} questionText - Raw question text possibly containing markdown image tags.
+	 * Ignores markdown references or HTML tags that are not raw URL strings.
+	 *
+	 * @param {Array<string|object>|null|undefined} list - Array of URL strings or objects.
+	 * @returns {Array<string>} Normalized array of string URLs.
+	 */
+	function normalizeImageUrlsList(list) {
+		if (!Array.isArray(list)) return [];
+		return list.map((item) => {
+			if (!item) return "";
+			if (typeof item === "string") {
+				const trimmed = item.trim();
+				if (trimmed.startsWith("![") || trimmed.startsWith("<")) {
+					return "";
+				}
+				return trimmed;
+			}
+			if (typeof item === "object") {
+				const val =
+					item.url || item.src || item.imageUrl || item.link || "";
+				if (typeof val === "string") {
+					const trimmedVal = val.trim();
+					if (
+						trimmedVal.startsWith("![") ||
+						trimmedVal.startsWith("<")
+					) {
+						return "";
+					}
+					return trimmedVal;
+				}
+				return "";
+			}
+			return "";
+		});
+	}
+
 	/**
 	 * Parses an indexed markdown image reference (e.g. ![alt](image_reference_index:0 "caption")).
 	 *
 	 * @param {string} text - Text to inspect.
-	 * @param {Array<string>} imageUrls - Array of candidate image URLs.
+	 * @param {Array<string>} [imageUrls=[]] - Array of candidate image URLs.
+	 * @param {Array<string>} [localImageUrls=[]] - Question-local image URLs array.
 	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }|null} Parsed reference or null.
 	 */
-	function parseIndexedReference(text, imageUrls) {
+	function parseIndexedReference(text, imageUrls = [], localImageUrls = []) {
 		// 1. Check if the question prompt text contains an indexed markdown image reference
 		const indexedRegex =
 			/!\[(.*?)\]\(\s*image_reference_index\s*:\s*(\d+)(?:\s*["']?(.*?)["']?)?\s*\)/;
@@ -144,9 +178,9 @@
 
 		const index = parseInt(match[2], 10);
 		const mediaUrl =
-			Array.isArray(imageUrls) && imageUrls[index]
-				? imageUrls[index]
-				: "";
+			(Array.isArray(localImageUrls) && localImageUrls[index]) ||
+			(Array.isArray(imageUrls) && imageUrls[index]) ||
+			"";
 		return {
 			matched: true,
 			matchedString: match[0],
@@ -209,9 +243,14 @@
 	 *
 	 * @param {string} text - Candidate string containing potential media references.
 	 * @param {Array<string>} [imageUrls=[]] - Resolved image URLs array for resolving index references.
+	 * @param {Array<string>} [localImageUrls=[]] - Question-local image URLs array.
 	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }} Extraction result.
 	 */
-	function parseMediaReference(text, imageUrls = []) {
+	function parseMediaReference(
+		text,
+		imageUrls = [],
+		localImageUrls = [],
+	) {
 		if (!text || typeof text !== "string") {
 			return {
 				matched: false,
@@ -226,7 +265,7 @@
 		// 2. Check if text contains a direct URL in markdown syntax
 		// 3. Check if text contains an HTML <img> tag
 		return (
-			parseIndexedReference(text, imageUrls) ||
+			parseIndexedReference(text, imageUrls, localImageUrls) ||
 			parseDirectMarkdownReference(text) ||
 			parseHtmlImgReference(text) || {
 				matched: false,
@@ -307,7 +346,7 @@
 	/**
 	 * Extracts media references (diagrams, images) embedded in question prompts via markdown syntax or HTML.
 	 *
-	 * Resolves image_reference_index:N against the extracted imageUrls array, or extracts direct URLs.
+	 * Resolves image_reference_index:N against question-local candidate arrays first, then extracted imageUrls array, or extracts direct URLs.
 	 *
 	 * @param {string|null|undefined} questionText - Raw prompt text from NotebookLM.
 	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
@@ -320,9 +359,14 @@
 		additionalSources = [],
 	) {
 		const safePrompt = questionText || "";
+		const localImageUrls = normalizeImageUrlsList(additionalSources);
 
 		// 1. Check if the question prompt text contains an embedded media reference
-		const parsedPrompt = parseMediaReference(safePrompt, imageUrls);
+		const parsedPrompt = parseMediaReference(
+			safePrompt,
+			imageUrls,
+			localImageUrls,
+		);
 
 		if (parsedPrompt.matched) {
 			const cleanQuestion = safePrompt
@@ -724,7 +768,7 @@
 	}
 
 	/**
-	 * Matches a DOM image element against a card by exact source URL.
+	 * Matches a DOM image element against a card by exact source URL or lazy-load attributes.
 	 *
 	 * @param {Element} img - DOM image element.
 	 * @param {string} targetUrl - Target diagram URL.
@@ -732,8 +776,16 @@
 	 */
 	function matchesDomImageUrl(img, targetUrl) {
 		if (!targetUrl || !img) return false;
+		const trimmedTarget = targetUrl.trim();
 		const src = (img.src || img.getAttribute?.("src") || "").trim();
-		return src === targetUrl.trim();
+		if (src === trimmedTarget) return true;
+		const dataSrc = (
+			img.getAttribute?.("data-src") ||
+			img.getAttribute?.("data-lazy-src") ||
+			img.getAttribute?.("data-original") ||
+			""
+		).trim();
+		return Boolean(dataSrc && dataSrc === trimmedTarget);
 	}
 
 	/**
@@ -786,17 +838,17 @@
 	 * @returns {Array<string>} Parsed array of image URLs.
 	 */
 	function parseImageUrlsPayload(payload) {
-		if (Array.isArray(payload)) return payload;
+		if (Array.isArray(payload)) return normalizeImageUrlsList(payload);
 		if (typeof payload !== "string" || !payload.trim()) return [];
 
 		try {
 			const parsed = JSON.parse(payload);
-			if (Array.isArray(parsed)) return parsed;
+			if (Array.isArray(parsed)) return normalizeImageUrlsList(parsed);
 		} catch {
 			const clean = unescapeHtml(payload);
 			try {
 				const parsed = JSON.parse(clean);
-				if (Array.isArray(parsed)) return parsed;
+				if (Array.isArray(parsed)) return normalizeImageUrlsList(parsed);
 			} catch {
 				// Invalid JSON string payload
 			}
@@ -812,7 +864,8 @@
 	 * @returns {Array<string>} Resolved image URLs.
 	 */
 	function resolveQuizImageUrls(data, parsedPayload) {
-		if (parsedPayload.length > 0) return parsedPayload;
+		if (parsedPayload.length > 0)
+			return normalizeImageUrlsList(parsedPayload);
 
 		const candidateLists = [
 			data.imageUrls,
@@ -825,11 +878,11 @@
 
 		for (const candidate of candidateLists) {
 			if (Array.isArray(candidate) && candidate.length > 0) {
-				return candidate;
+				return normalizeImageUrlsList(candidate);
 			}
 		}
 
-		return findImageUrlsDeep(data);
+		return normalizeImageUrlsList(findImageUrlsDeep(data));
 	}
 
 	/**
@@ -1206,6 +1259,7 @@
 	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=, Array<string|object>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean },
 	 *   sanitizeTopicTags: function((Array<string>|null|undefined)): Array<string>,
 	 *   normalizeBlankAnswer: function((string|null|undefined)): string,
+	 *   isPlaceholderImageSrc: function(string): boolean,
 	 *   findImageUrlsDeep: function(*, Set<object>=): Array<string>,
 	 *   resolveCardsWithDomImages: function(Array<object>, (Document|Element|null)=): Array<object>,
 	 *   findMatchingDomImage: function(object, Array<Element>, Set<Element>=): (Element|null),
@@ -1225,6 +1279,7 @@
 		extractQuestionMedia,
 		sanitizeTopicTags,
 		normalizeBlankAnswer,
+		isPlaceholderImageSrc,
 		findImageUrlsDeep,
 		resolveCardsWithDomImages,
 		findMatchingDomImage,

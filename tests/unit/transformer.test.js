@@ -170,6 +170,41 @@ test("transformer: parseQuizJson", async (t) => {
 			});
 		},
 	);
+
+	await t.test(
+		"normalizes candidate images array containing object entries into string URLs",
+		() => {
+			const payloadWithObjectImages = JSON.stringify({
+				quiz: [
+					{
+						question: "What is this component?",
+						options: ["Diode", "Resistor"],
+						answer: 0,
+					},
+				],
+				images: [
+					{
+						url: "https://example.com/diode.png",
+						alt: "Diode Diagram",
+					},
+					{
+						src: "https://example.com/resistor.png",
+						alt: "Resistor",
+					},
+					{ imageUrl: "https://example.com/capacitor.png" },
+					"https://example.com/inductor.png",
+				],
+			});
+
+			const { imageUrls } = parseQuizJson(payloadWithObjectImages);
+			assert.deepEqual(imageUrls, [
+				"https://example.com/diode.png",
+				"https://example.com/resistor.png",
+				"https://example.com/capacitor.png",
+				"https://example.com/inductor.png",
+			]);
+		},
+	);
 });
 
 test("transformer: mapQuizDataToCards", async (t) => {
@@ -371,6 +406,44 @@ test("transformer: mapQuizDataToCards", async (t) => {
 			assert.equal(card.diagramAlt, "A circuit diagram for Example 4");
 			assert.equal(card.diagramCaption, "Circuit_Analysis_Chapter_1.pdf");
 			assert.equal(card.hasMediaReference, true);
+		},
+	);
+
+	await t.test(
+		"scopes prompt image reference index to question-local imageUrls array",
+		() => {
+			const multiQuestionData = [
+				{
+					question:
+						"Question 1 prompt:\n\n![Diagram 1](image_reference_index:0)",
+					options: ["A", "B"],
+					answer: 0,
+					imageUrls: ["https://example.com/local-image-q1.png"],
+				},
+				{
+					question:
+						"Question 2 prompt:\n\n![Diagram 2](image_reference_index:0)",
+					options: ["C", "D"],
+					answer: 1,
+					imageUrls: ["https://example.com/local-image-q2.png"],
+				},
+			];
+
+			const cards = mapQuizDataToCards(multiQuestionData, [
+				"https://example.com/global-image.png",
+			]);
+
+			assert.equal(cards.length, 2);
+			assert.equal(
+				cards[0].diagramUrl,
+				"https://example.com/local-image-q1.png",
+				"Question 1 index 0 should resolve to question 1 local image",
+			);
+			assert.equal(
+				cards[1].diagramUrl,
+				"https://example.com/local-image-q2.png",
+				"Question 2 index 0 should resolve to question 2 local image",
+			);
 		},
 	);
 });

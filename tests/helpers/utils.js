@@ -76,6 +76,13 @@ export const normalizeBlankAnswer =
 	globalThis.NotebookLMToAnkiUtils.normalizeBlankAnswer;
 
 /**
+ * Re-exported isPlaceholderImageSrc utility.
+ * @type {function(string): boolean}
+ */
+export const isPlaceholderImageSrc =
+	globalThis.NotebookLMToAnkiUtils.isPlaceholderImageSrc;
+
+/**
  * Re-exported normalizeQuestionText utility.
  * @type {function(string|null|undefined): string}
  */

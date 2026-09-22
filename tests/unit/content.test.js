@@ -483,6 +483,112 @@ test("content: data miner detection and batch extraction", async (t) => {
 	);
 
 	await t.test(
+		"skips Base64 serialization when matching DOM image renders a lazy-load placeholder",
+		async () => {
+			const placeholderQuiz = JSON.stringify({
+				quiz: [
+					{
+						question:
+							"Lazy loaded diagram:\n\n![Circuit Diagram](image_reference_index:0)",
+						options: ["Resistor", "Capacitor"],
+						answer: 0,
+					},
+				],
+			});
+
+			appRoot.setAttribute("data-app-data", placeholderQuiz);
+			appRoot.setAttribute(
+				"data-image-urls",
+				JSON.stringify(["https://example.com/actual-highres.png"]),
+			);
+
+			const placeholderImg = mockDOM.document.createElement("img");
+			placeholderImg.src =
+				"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==";
+			placeholderImg.alt = "Circuit Diagram";
+			placeholderImg.setAttribute(
+				"data-src",
+				"https://example.com/actual-highres.png",
+			);
+			placeholderImg.naturalWidth = 200;
+			placeholderImg.naturalHeight = 200;
+			placeholderImg.complete = true;
+			mockDOM.document.body.appendChild(placeholderImg);
+
+			const origListeners = mockChrome.runtime.onMessage.listeners;
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({ success: true, count: 1, skipped: 0 });
+						return true;
+					}
+				},
+			];
+
+			try {
+				await new Promise((resolve, reject) => {
+					/**
+					 * Message handler waiting for ANKI_EXTRACTED_DATA.
+					 * @param {object} event - Message event.
+					 * @returns {void}
+					 */
+					const messageHandler = (event) => {
+						if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							try {
+								assert.equal(event.data.cards.length, 1);
+								const card = event.data.cards[0];
+								assert.equal(
+									card.diagramUrl,
+									"https://example.com/actual-highres.png",
+									"Card should retain high-resolution URL from data-src",
+								);
+								assert.equal(
+									card.imageBase64,
+									undefined,
+									"Placeholder DOM image must not be serialized to Base64",
+								);
+								resolve();
+							} catch (err) {
+								reject(err);
+							}
+						} else if (event.data?.action === "ANKI_REAL_FAIL") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							reject(new Error(event.data.error));
+						}
+					};
+
+					mockDOM.window.addEventListener("message", messageHandler);
+					mockDOM.window.postMessage({
+						action: "ANKI_TRIGGER_EXTRACT",
+						triggerId: "trigger-placeholder-test",
+						notebookTitle: "Placeholder Test",
+					});
+				});
+			} finally {
+				mockChrome.runtime.onMessage.listeners = origListeners;
+				placeholderImg.parentElement?.removeChild(placeholderImg);
+				appRoot.removeAttribute("data-image-urls");
+				appRoot.setAttribute("data-app-data", standardQuizJson);
+				mockDOM.window.postMessage({
+					action: "ANKI_REAL_SUCCESS",
+					count: 0,
+				});
+			}
+		},
+	);
+
+	await t.test(
 		"empty data-app-data attribute posts ANKI_REAL_FAIL",
 		async () => {
 			appRoot.setAttribute("data-app-data", "");
