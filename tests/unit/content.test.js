@@ -364,6 +364,125 @@ test("content: data miner detection and batch extraction", async (t) => {
 	);
 
 	await t.test(
+		"preserves 1-to-1 matching during Base64 capture when cards share generic alt text",
+		async () => {
+			const quizWithGenericAlts = JSON.stringify({
+				quiz: [
+					{
+						question: "First circuit diagram:\n\n![Diagram](image_reference_index:0)",
+						options: ["Resistor", "Capacitor", "Inductor", "Diode"],
+						answer: 0,
+					},
+					{
+						question: "Second circuit diagram:\n\n![Diagram](image_reference_index:1)",
+						options: ["Series", "Parallel", "Bridge", "Mesh"],
+						answer: 1,
+					},
+				],
+			});
+
+			appRoot.setAttribute("data-app-data", quizWithGenericAlts);
+			appRoot.setAttribute(
+				"data-image-urls",
+				JSON.stringify([
+					"https://example.com/circuit1.png",
+					"https://example.com/circuit2.png",
+				]),
+			);
+
+			const img1 = mockDOM.document.createElement("img");
+			img1.src = "https://example.com/circuit1.png";
+			img1.alt = "Diagram";
+			img1.naturalWidth = 200;
+			img1.naturalHeight = 200;
+			img1.complete = true;
+			mockDOM.document.body.appendChild(img1);
+
+			const img2 = mockDOM.document.createElement("img");
+			img2.src = "https://example.com/circuit2.png";
+			img2.alt = "Diagram";
+			img2.naturalWidth = 200;
+			img2.naturalHeight = 200;
+			img2.complete = true;
+			mockDOM.document.body.appendChild(img2);
+
+			const origListeners = mockChrome.runtime.onMessage.listeners;
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({ success: true, count: 2, skipped: 0 });
+						return true;
+					}
+				},
+			];
+
+			try {
+				await new Promise((resolve, reject) => {
+					/**
+					 * Message handler waiting for ANKI_EXTRACTED_DATA.
+					 * @param {object} event - Message event.
+					 * @returns {void}
+					 */
+					const messageHandler = (event) => {
+						if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							try {
+								assert.equal(event.data.cards.length, 2);
+								assert.notEqual(
+									event.data.cards[0].diagramUrl,
+									event.data.cards[1].diagramUrl,
+									"Cards sharing generic alt text must be assigned distinct DOM images",
+								);
+								assert.ok(
+									event.data.cards[0].imageBase64,
+									"Card 0 should have extracted imageBase64",
+								);
+								assert.ok(
+									event.data.cards[1].imageBase64,
+									"Card 1 should have extracted imageBase64",
+								);
+								resolve();
+							} catch (err) {
+								reject(err);
+							}
+						} else if (event.data?.action === "ANKI_REAL_FAIL") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							reject(new Error(event.data.error));
+						}
+					};
+
+					mockDOM.window.addEventListener("message", messageHandler);
+					mockDOM.window.postMessage({
+						action: "ANKI_TRIGGER_EXTRACT",
+						triggerId: "trigger-shared-alt-test",
+						notebookTitle: "Shared Alt Test",
+					});
+				});
+			} finally {
+				mockChrome.runtime.onMessage.listeners = origListeners;
+				img1.parentElement?.removeChild(img1);
+				img2.parentElement?.removeChild(img2);
+				appRoot.removeAttribute("data-image-urls");
+				appRoot.setAttribute("data-app-data", standardQuizJson);
+				mockDOM.window.postMessage({
+					action: "ANKI_REAL_SUCCESS",
+					count: 0,
+				});
+			}
+		},
+	);
+
+	await t.test(
 		"empty data-app-data attribute posts ANKI_REAL_FAIL",
 		async () => {
 			appRoot.setAttribute("data-app-data", "");
