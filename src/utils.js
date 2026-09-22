@@ -19,6 +19,7 @@
 
 	/**
 	 * Cleans and normalizes a notebook title for use in Anki deck hierarchies.
+	 *
 	 * Replaces Anki subdeck separator colons ('::') with dashes and applies fallback defaults.
 	 *
 	 * @param {string|null|undefined} title - The raw notebook title.
@@ -122,72 +123,305 @@
 	}
 
 	/**
-	 * Extracts inline markdown image references (e.g. `![alt](image_reference_index:0 "caption")`)
-	 * from question text, cleans the prompt, and resolves the image URL from the provided array.
+	 * Normalizes a list of candidate image URLs, resolving objects ({url, src, imageUrl, link})
+	 * into trimmed string URLs while preserving array indexing.
 	 *
-	 * @param {string|null|undefined} questionText - Raw question text possibly containing markdown image tags.
-	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
-	 * @returns {{ cleanQuestion: string, mediaUrl: string, alt: string, caption: string }} Extracted media metadata and sanitized prompt.
+	 * Ignores markdown references or HTML tags that are not raw URL strings.
+	 *
+	 * @param {Array<string|object>|null|undefined} list - Array of URL strings or objects.
+	 * @returns {Array<string>} Normalized array of string URLs.
 	 */
-	function extractQuestionMedia(questionText, imageUrls = []) {
-		if (!questionText) {
-			return { cleanQuestion: "", mediaUrl: "", alt: "", caption: "" };
-		}
+	function normalizeImageUrlsList(list) {
+		if (!Array.isArray(list)) return [];
+		return list.map((item) => {
+			if (!item) return "";
+			if (typeof item === "string") {
+				const trimmed = item.trim();
+				if (trimmed.startsWith("![") || trimmed.startsWith("<")) {
+					return "";
+				}
+				return trimmed;
+			}
+			if (typeof item === "object") {
+				const val =
+					item.url || item.src || item.imageUrl || item.link || "";
+				if (typeof val === "string") {
+					const trimmedVal = val.trim();
+					if (
+						trimmedVal.startsWith("![") ||
+						trimmedVal.startsWith("<")
+					) {
+						return "";
+					}
+					return trimmedVal;
+				}
+				return "";
+			}
+			return "";
+		});
+	}
 
+	/**
+	 * Parses an indexed markdown image reference (e.g. ![alt](image_reference_index:0 "caption")).
+	 *
+	 * @param {string} text - Text to inspect.
+	 * @param {Array<string>} [imageUrls=[]] - Array of candidate image URLs.
+	 * @param {Array<string>} [localImageUrls=[]] - Question-local image URLs array.
+	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }|null} Parsed reference or null.
+	 */
+	function parseIndexedReference(text, imageUrls = [], localImageUrls = []) {
+		// 1. Check if the question prompt text contains an indexed markdown image reference
 		const indexedRegex =
-			/!\[(.*?)\]\(image_reference_index:(\d+)(?:\s*"(.*?)")?\)/;
-		const indexedMatch = questionText.match(indexedRegex);
+			/!\[(.*?)\]\(\s*image_reference_index\s*:\s*(\d+)(?:\s*["']?(.*?)["']?)?\s*\)/;
+		const match = text.match(indexedRegex);
+		if (!match) return null;
 
-		if (indexedMatch) {
-			const alt = (indexedMatch[1] || "").trim();
-			const index = parseInt(indexedMatch[2], 10);
-			const caption = (indexedMatch[3] || "").trim();
-			const mediaUrl =
-				Array.isArray(imageUrls) && imageUrls[index]
-					? imageUrls[index]
-					: "";
-			const cleanQuestion = questionText
-				.replace(indexedMatch[0], "")
-				.trim();
+		const index = parseInt(match[2], 10);
+		const mediaUrl =
+			(Array.isArray(localImageUrls) && localImageUrls[index]) ||
+			(Array.isArray(imageUrls) && imageUrls[index]) ||
+			"";
+		return {
+			matched: true,
+			matchedString: match[0],
+			mediaUrl,
+			alt: (match[1] || "").trim(),
+			caption: (match[3] || "").trim(),
+		};
+	}
 
-			return {
-				cleanQuestion,
-				mediaUrl,
-				alt,
-				caption,
-			};
-		}
-
+	/**
+	 * Parses a direct URL markdown image reference (e.g. ![alt](https://example.com/pic.png "caption")).
+	 *
+	 * @param {string} text - Text to inspect.
+	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }|null} Parsed reference or null.
+	 */
+	function parseDirectMarkdownReference(text) {
+		// 2. Check if the question prompt text contains a direct URL in markdown syntax
 		const directUrlRegex =
-			/!\[(.*?)\]\(((?:https?:\/\/|\/)[^\s)]+)(?:\s*"(.*?)")?\)/;
-		const directMatch = questionText.match(directUrlRegex);
-
-		if (directMatch) {
-			const alt = (directMatch[1] || "").trim();
-			const mediaUrl = (directMatch[2] || "").trim();
-			const caption = (directMatch[3] || "").trim();
-			const cleanQuestion = questionText
-				.replace(directMatch[0], "")
-				.trim();
-
-			return {
-				cleanQuestion,
-				mediaUrl,
-				alt,
-				caption,
-			};
-		}
+			/!\[(.*?)\]\(\s*((?:https?:\/\/|\/|blob:|data:)[^\s)]+)(?:\s*["']?(.*?)["']?)?\s*\)/;
+		const match = text.match(directUrlRegex);
+		if (!match) return null;
 
 		return {
-			cleanQuestion: questionText.trim(),
-			mediaUrl: "",
-			alt: "",
+			matched: true,
+			matchedString: match[0],
+			mediaUrl: (match[2] || "").trim(),
+			alt: (match[1] || "").trim(),
+			caption: (match[3] || "").trim(),
+		};
+	}
+
+	/**
+	 * Parses an HTML <img> tag embedded in text.
+	 *
+	 * @param {string} text - Text to inspect.
+	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }|null} Parsed reference or null.
+	 */
+	function parseHtmlImgReference(text) {
+		// 3. Check if the question prompt text contains an HTML <img> tag
+		const htmlImgRegex = /<img\s+([^>]+)>/i;
+		const match = text.match(htmlImgRegex);
+		if (!match) return null;
+
+		const attrs = match[1];
+		const srcMatch = attrs.match(/src=["']([^"']+)["']/i);
+		const altMatch = attrs.match(/alt=["']([^"']*)["']/i);
+		if (!srcMatch) return null;
+
+		return {
+			matched: true,
+			matchedString: match[0],
+			mediaUrl: srcMatch[1].trim(),
+			alt: altMatch ? altMatch[1].trim() : "",
 			caption: "",
 		};
 	}
 
 	/**
+	 * Parses a string to extract image references in markdown index, direct URL, or HTML img format.
+	 *
+	 * @param {string} text - Candidate string containing potential media references.
+	 * @param {Array<string>} [imageUrls=[]] - Resolved image URLs array for resolving index references.
+	 * @param {Array<string>} [localImageUrls=[]] - Question-local image URLs array.
+	 * @returns {{ matched: boolean, matchedString: string, mediaUrl: string, alt: string, caption: string }} Extraction result.
+	 */
+	function parseMediaReference(
+		text,
+		imageUrls = [],
+		localImageUrls = [],
+	) {
+		if (!text || typeof text !== "string") {
+			return {
+				matched: false,
+				matchedString: "",
+				mediaUrl: "",
+				alt: "",
+				caption: "",
+			};
+		}
+
+		// 1. Check if text contains an indexed markdown image reference
+		// 2. Check if text contains a direct URL in markdown syntax
+		// 3. Check if text contains an HTML <img> tag
+		return (
+			parseIndexedReference(text, imageUrls, localImageUrls) ||
+			parseDirectMarkdownReference(text) ||
+			parseHtmlImgReference(text) || {
+				matched: false,
+				matchedString: "",
+				mediaUrl: "",
+				alt: "",
+				caption: "",
+			}
+		);
+	}
+
+	/**
+	 * Checks whether a candidate string starts with a recognized URL protocol or path prefix.
+	 *
+	 * @param {string} str - Candidate URL string.
+	 * @returns {boolean} True if string matches common URL prefixes.
+	 */
+	function isDirectUrlPrefix(str) {
+		const prefixes = ["http://", "https://", "blob:", "data:", "/"];
+		return prefixes.some((prefix) => str.startsWith(prefix));
+	}
+
+	/**
+	 * Inspects candidate media sources outside questionText (e.g. q.imageUrls array or source objects).
+	 *
+	 * @param {Array<string|object>} additionalSources - Array of source strings or objects.
+	 * @param {Array<string>} imageUrls - Resolved image URLs array.
+	 * @returns {{ mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean }|null} Discovered media or null.
+	 */
+	function extractFromAdditionalSources(additionalSources, imageUrls) {
+		if (
+			!Array.isArray(additionalSources) ||
+			additionalSources.length === 0
+		) {
+			return null;
+		}
+
+		// 4. Check candidate sources outside questionText (e.g. NotebookLM q.imageUrls array)
+		for (const source of additionalSources) {
+			if (!source) continue;
+
+			if (typeof source === "string") {
+				const parsed = parseMediaReference(source, imageUrls);
+				if (parsed.matched) {
+					return {
+						mediaUrl: parsed.mediaUrl,
+						alt: parsed.alt,
+						caption: parsed.caption,
+						hasMediaReference: true,
+					};
+				}
+
+				// Raw URL string fallback
+				if (isDirectUrlPrefix(source)) {
+					return {
+						mediaUrl: source.trim(),
+						alt: "",
+						caption: "",
+						hasMediaReference: true,
+					};
+				}
+			} else if (typeof source === "object") {
+				const objUrl = source.url || source.src || "";
+				if (objUrl) {
+					return {
+						mediaUrl: String(objUrl).trim(),
+						alt: (source.alt || "").trim(),
+						caption: (source.caption || "").trim(),
+						hasMediaReference: true,
+					};
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Extracts media references (diagrams, images) embedded in question prompts via markdown syntax or HTML.
+	 *
+	 * Resolves image_reference_index:N against question-local candidate arrays first, then extracted imageUrls array, or extracts direct URLs.
+	 *
+	 * @param {string|null|undefined} questionText - Raw prompt text from NotebookLM.
+	 * @param {Array<string>} [imageUrls=[]] - Array of resolved image URLs extracted from the page.
+	 * @param {Array<string|object>} [additionalSources=[]] - Optional array of question-level media fields (e.g. q.imageUrls).
+	 * @returns {{ cleanQuestion: string, mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean }} Extracted media metadata and sanitized prompt.
+	 */
+	function extractQuestionMedia(
+		questionText,
+		imageUrls = [],
+		additionalSources = [],
+	) {
+		const safePrompt = questionText || "";
+		const localImageUrls = normalizeImageUrlsList(additionalSources);
+
+		// 1. Check if the question prompt text contains an embedded media reference
+		const parsedPrompt = parseMediaReference(
+			safePrompt,
+			imageUrls,
+			localImageUrls,
+		);
+
+		if (parsedPrompt.matched) {
+			const cleanQuestion = safePrompt
+				.replace(parsedPrompt.matchedString, "")
+				.trim();
+			let mediaUrl = parsedPrompt.mediaUrl;
+			let alt = parsedPrompt.alt;
+			let caption = parsedPrompt.caption;
+
+			// If indexed reference could not resolve a URL, fall through to candidate sources
+			if (!mediaUrl) {
+				const extraMedia = extractFromAdditionalSources(
+					additionalSources,
+					imageUrls,
+				);
+				if (extraMedia && extraMedia.mediaUrl) {
+					mediaUrl = extraMedia.mediaUrl;
+					alt = alt || extraMedia.alt;
+					caption = caption || extraMedia.caption;
+				}
+			}
+
+			return {
+				cleanQuestion,
+				mediaUrl,
+				alt,
+				caption,
+				hasMediaReference: true,
+			};
+		}
+
+		// 2. Check candidate sources outside questionText (e.g. NotebookLM q.imageUrls array)
+		const extraMedia = extractFromAdditionalSources(
+			additionalSources,
+			imageUrls,
+		);
+		if (extraMedia) {
+			return {
+				cleanQuestion: safePrompt.trim(),
+				...extraMedia,
+			};
+		}
+
+		return {
+			cleanQuestion: safePrompt.trim(),
+			mediaUrl: "",
+			alt: "",
+			caption: "",
+			hasMediaReference: false,
+		};
+	}
+
+	/**
 	 * Sanitizes topic strings from Google Notebook into valid, compliant Anki tags.
+	 *
 	 * Replaces spaces with underscores and removes invalid tag characters.
 	 *
 	 * @param {Array<string>|null|undefined} topics - Array of raw topic names.
@@ -226,6 +460,432 @@
 	}
 
 	/**
+	 * Validates whether a candidate string is an image URL.
+	 *
+	 * Supports blob, data:image, Google CDN endpoints, and common image file extensions.
+	 *
+	 * @param {*} val - Candidate value to inspect.
+	 * @returns {boolean} True if the value matches image URL patterns.
+	 */
+	function isImageUrl(val) {
+		if (typeof val !== "string") return false;
+		const trimmed = val.trim();
+		if (
+			trimmed.startsWith("blob:") ||
+			trimmed.startsWith("data:image/") ||
+			trimmed.includes("googleusercontent.com") ||
+			trimmed.includes("usercontent.goog") ||
+			trimmed.includes("lh3.google.com")
+		) {
+			return true;
+		}
+		return (
+			/^https?:\/\//i.test(trimmed) &&
+			/\.(png|jpe?g|gif|webp|svg|avif)(\?|#|$)/i.test(
+				trimmed,
+			)
+		);
+	}
+
+	/**
+	 * Traverses object properties to collect discovered image URLs.
+	 *
+	 * Inspects known image property keys followed by recursive property traversal.
+	 *
+	 * @param {object} target - Target object to extract image URLs from.
+	 * @param {Set<object>} seen - Set of visited objects to prevent circular recursion.
+	 * @returns {Array<string>} Discovered image URLs.
+	 */
+	function collectObjectImageUrls(target, seen) {
+		const results = [];
+		const imageProps = [
+			"imageUrls",
+			"image_urls",
+			"images",
+			"imageUrl",
+			"image_url",
+			"pictureUrls",
+			"photoUrls",
+		];
+
+		// Check standard property keys first
+		for (const prop of imageProps) {
+			const val = target[prop];
+			if (Array.isArray(val)) {
+				for (const url of val) {
+					if (isImageUrl(url)) results.push(url.trim());
+				}
+			} else if (isImageUrl(val)) {
+				results.push(val.trim());
+			}
+		}
+
+		// Traverse all properties
+		for (const key of Object.keys(target)) {
+			const val = target[key];
+			if (typeof val === "string" && isImageUrl(val)) {
+				results.push(val.trim());
+			} else if (val && typeof val === "object") {
+				results.push(...findImageUrlsDeep(val, seen));
+			}
+		}
+
+		return results;
+	}
+
+	/**
+	 * Recursively traverses an arbitrary JavaScript object or array to find candidate image URLs.
+	 *
+	 * Filters for strings that look like valid web, blob, or data image URLs.
+	 *
+	 * @param {*} target - The root object or array to traverse.
+	 * @param {Set<object>} [seen=new Set()] - Set of visited objects to prevent circular reference recursion.
+	 * @returns {Array<string>} Discovered image URLs.
+	 */
+	function findImageUrlsDeep(target, seen = new Set()) {
+		if (!target || typeof target !== "object") return [];
+		if (seen.has(target)) return [];
+		seen.add(target);
+
+		const results = [];
+		if (Array.isArray(target)) {
+			for (const item of target) {
+				if (isImageUrl(item)) {
+					results.push(item.trim());
+				} else if (item && typeof item === "object") {
+					results.push(...findImageUrlsDeep(item, seen));
+				}
+			}
+		} else {
+			results.push(...collectObjectImageUrls(target, seen));
+		}
+
+		return Array.from(new Set(results));
+	}
+
+	/**
+	 * Normalizes a string for flexible matching across spaces, underscores, URI encoding, and casing.
+	 *
+	 * @param {string|null|undefined} str - String to normalize.
+	 * @returns {string} Normalized string with collapsed whitespace and lowercased characters.
+	 */
+	function normalizeForMatch(str) {
+		if (!str) return "";
+		let decoded = str;
+		try {
+			decoded = decodeURIComponent(str);
+		} catch {
+			// Keep original string if URI decode throws
+		}
+		return decoded.toLowerCase().replace(/[_\s]+/g, " ").trim();
+	}
+
+	/**
+	 * Checks whether an image source URL represents an empty or placeholder asset.
+	 *
+	 * @param {string} url - Image URL to test.
+	 * @returns {boolean} True if source is a placeholder.
+	 */
+	function isPlaceholderImageSrc(url) {
+		if (!url) return true;
+		return (
+			url.startsWith("data:image/svg+xml") ||
+			url.startsWith("data:image/gif") ||
+			/placeholder|spinner|blank|spacer/i.test(url)
+		);
+	}
+
+	/**
+	 * Resolves the highest quality image source from an <img> element.
+	 *
+	 * Prioritizes lazy-load attributes (e.g. data-src) and currentSrc over placeholder src values.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @returns {string} Best available image URL, or empty string.
+	 */
+	function resolveBestImageSrc(img) {
+		const candidateKeys = [
+			"data-src",
+			"data-lazy-src",
+			"data-original",
+			"src",
+		];
+		for (const key of candidateKeys) {
+			const val = (img.getAttribute?.(key) || "").trim();
+			if (val && !isPlaceholderImageSrc(val)) {
+				return val;
+			}
+		}
+
+		const current = (img.currentSrc || img.src || "").trim();
+		if (current && !isPlaceholderImageSrc(current)) {
+			return current;
+		}
+
+		return (img.src || "").trim();
+	}
+
+	/**
+	 * Extracts normalized image attributes (src, alt, caption) from a DOM image element or its container.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @returns {{ src: string, alt: string, caption: string }|null} Metadata object, or null if invalid or SVG placeholder.
+	 */
+	function extractDomImageMetadata(img) {
+		const src = resolveBestImageSrc(img);
+		if (!src || src.startsWith("data:image/svg+xml")) return null;
+
+		const alt = (
+			img.alt ||
+			img.getAttribute?.("alt") ||
+			""
+		).trim();
+
+		const parent =
+			(typeof img.closest === "function" &&
+				img.closest(
+					"figure, .question-image-container, .image-container",
+				)) ||
+			img.parentElement;
+		const captionEl = parent?.querySelector(
+			".question-image-caption, .caption, figcaption",
+		);
+		const caption = (captionEl?.textContent || "").trim();
+
+		return { src, alt, caption };
+	}
+
+	/**
+	 * Checks whether card metadata text matches DOM metadata text (directly or normalized).
+	 *
+	 * @param {string|null|undefined} cardText - Text from card metadata (e.g. caption or alt).
+	 * @param {string|null|undefined} domText - Text from DOM element (e.g. caption or alt).
+	 * @returns {boolean} True if strings match directly or normalized.
+	 */
+	function matchesNormalizedText(cardText, domText) {
+		if (!cardText || !domText) return false;
+		if (domText.includes(cardText) || cardText.includes(domText)) {
+			return true;
+		}
+
+		const normCard = normalizeForMatch(cardText);
+		const normDom = normalizeForMatch(domText);
+		if (!normCard || !normDom) return false;
+
+		return normDom.includes(normCard) || normCard.includes(normDom);
+	}
+
+	/**
+	 * Evaluates whether a candidate DOM image matches a card based on caption, alt text, or single-diagram fallback.
+	 *
+	 * @param {object} card - Flashcard object.
+	 * @param {{ src: string, alt: string, caption: string }} domMeta - Candidate image metadata.
+	 * @param {boolean} isSingleDiagramCandidate - Whether the quiz contains exactly 1 card with media references.
+	 * @param {Element} img - Raw DOM image element for class checks.
+	 * @returns {boolean} True if the image corresponds to the card.
+	 */
+	function doesDomImageMatchCard(
+		card,
+		domMeta,
+		isSingleDiagramCandidate,
+		img,
+	) {
+		// 1. Match by caption (direct or normalized for spaces/underscores/casing/%20)
+		if (matchesNormalizedText(card.diagramCaption, domMeta.caption)) {
+			return true;
+		}
+
+		// 2. Match by alt text (direct or normalized)
+		if (matchesNormalizedText(card.diagramAlt, domMeta.alt)) {
+			return true;
+		}
+
+		// 3. Fallback: if only 1 diagram card and 1 question-image in DOM
+		return Boolean(
+			isSingleDiagramCandidate &&
+				img.classList?.contains("question-image"),
+		);
+	}
+
+	/**
+	 * Matches cards that have media references but missing diagram URLs against rendered <img> elements in the DOM.
+	 *
+	 * Compares image alt text, surrounding captions (.question-image-caption), and question prompt text.
+	 *
+	 * @param {Array<object>} cards - Array of normalized card objects.
+	 * @param {Document|Element|null} [rootNode=null] - DOM document or root element to search within.
+	 * @returns {Array<object>} Cards with resolved diagram URLs where matching DOM elements were found.
+	 */
+	function resolveCardsWithDomImages(cards, rootNode = null) {
+		if (!Array.isArray(cards)) return [];
+		const searchRoot =
+			rootNode || (typeof document !== "undefined" ? document : null);
+		if (!searchRoot || typeof searchRoot.querySelectorAll !== "function") {
+			return cards;
+		}
+
+		const domImages = Array.from(
+			searchRoot.querySelectorAll("img, .question-image"),
+		);
+		if (domImages.length === 0) return cards;
+
+		const assignedDomImages = new Set();
+		const isSingleDiagramCandidate =
+			cards.filter((c) => c.hasMediaReference).length === 1;
+
+		return cards.map((card) => {
+			if (card.diagramUrl || !card.hasMediaReference) {
+				return card;
+			}
+
+			// Try to match against DOM images
+			for (const img of domImages) {
+				if (assignedDomImages.has(img)) continue;
+
+				const domMeta = extractDomImageMetadata(img);
+				if (!domMeta) continue;
+
+				if (
+					doesDomImageMatchCard(
+						card,
+						domMeta,
+						isSingleDiagramCandidate,
+						img,
+					)
+				) {
+					assignedDomImages.add(img);
+					return {
+						...card,
+						diagramUrl: domMeta.src,
+						diagramAlt: card.diagramAlt || domMeta.alt,
+						diagramCaption: card.diagramCaption || domMeta.caption,
+					};
+				}
+			}
+
+			return card;
+		});
+	}
+
+	/**
+	 * Matches a DOM image element against a card by exact source URL or lazy-load attributes.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @param {string} targetUrl - Target diagram URL.
+	 * @returns {boolean} True if the image source matches.
+	 */
+	function matchesDomImageUrl(img, targetUrl) {
+		if (!targetUrl || !img) return false;
+		const trimmedTarget = targetUrl.trim();
+		const src = (img.src || img.getAttribute?.("src") || "").trim();
+		if (src === trimmedTarget) return true;
+		const dataSrc = (
+			img.getAttribute?.("data-src") ||
+			img.getAttribute?.("data-lazy-src") ||
+			img.getAttribute?.("data-original") ||
+			""
+		).trim();
+		return Boolean(dataSrc && dataSrc === trimmedTarget);
+	}
+
+	/**
+	 * Matches a DOM image element against a card by trimmed alt text.
+	 *
+	 * @param {Element} img - DOM image element.
+	 * @param {string} targetAlt - Target alt text.
+	 * @returns {boolean} True if the image alt text matches.
+	 */
+	function matchesDomImageAlt(img, targetAlt) {
+		if (!targetAlt || !img) return false;
+		const imgAlt = (img.alt || img.getAttribute?.("alt") || "").trim();
+		return imgAlt === targetAlt.trim();
+	}
+
+	/**
+	 * Finds a matching unassigned DOM image element for a card.
+	 *
+	 * Prioritizes exact URL matches before falling back to alt text comparisons.
+	 *
+	 * @param {object} card - Flashcard object.
+	 * @param {Array<Element>} domImages - List of candidate image elements.
+	 * @param {Set<Element>} [assignedImages] - Set of already assigned image elements.
+	 * @returns {Element|null} Matched image element or null.
+	 */
+	function findMatchingDomImage(card, domImages, assignedImages = new Set()) {
+		if (!card || !Array.isArray(domImages)) return null;
+
+		if (card.diagramUrl) {
+			for (const img of domImages) {
+				if (assignedImages?.has(img)) continue;
+				if (matchesDomImageUrl(img, card.diagramUrl)) return img;
+			}
+		}
+
+		if (card.diagramAlt) {
+			for (const img of domImages) {
+				if (assignedImages?.has(img)) continue;
+				if (matchesDomImageAlt(img, card.diagramAlt)) return img;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Parses image URLs from an argument payload, handling arrays and JSON/HTML-encoded strings.
+	 *
+	 * @param {string|Array<string>|null|undefined} payload - Payload to parse.
+	 * @returns {Array<string>} Parsed array of image URLs.
+	 */
+	function parseImageUrlsPayload(payload) {
+		if (Array.isArray(payload)) return normalizeImageUrlsList(payload);
+		if (typeof payload !== "string" || !payload.trim()) return [];
+
+		try {
+			const parsed = JSON.parse(payload);
+			if (Array.isArray(parsed)) return normalizeImageUrlsList(parsed);
+		} catch {
+			const clean = unescapeHtml(payload);
+			try {
+				const parsed = JSON.parse(clean);
+				if (Array.isArray(parsed)) return normalizeImageUrlsList(parsed);
+			} catch {
+				// Invalid JSON string payload
+			}
+		}
+		return [];
+	}
+
+	/**
+	 * Resolves image URLs for a quiz from explicit payload, query metadata, or deep object traversal.
+	 *
+	 * @param {object} data - Parsed quiz root data object.
+	 * @param {Array<string>} parsedPayload - Image URLs already parsed from arguments.
+	 * @returns {Array<string>} Resolved image URLs.
+	 */
+	function resolveQuizImageUrls(data, parsedPayload) {
+		if (parsedPayload.length > 0)
+			return normalizeImageUrlsList(parsedPayload);
+
+		const candidateLists = [
+			data.imageUrls,
+			data.mostRecentQuery?.imageUrls,
+			data.image_urls,
+			data.mostRecentQuery?.image_urls,
+			data.images,
+			data.mostRecentQuery?.images,
+		];
+
+		for (const candidate of candidateLists) {
+			if (Array.isArray(candidate) && candidate.length > 0) {
+				return normalizeImageUrlsList(candidate);
+			}
+		}
+
+		return normalizeImageUrlsList(findImageUrlsDeep(data));
+	}
+
+	/**
 	 * Parses and validates raw NotebookLM JSON string extracted from the DOM,
 	 * optionally incorporating image URLs and covered topic metadata.
 	 *
@@ -253,28 +913,8 @@
 			throw new Error("0 Questions Found.");
 		}
 
-		let imageUrls = [];
-		if (Array.isArray(imageUrlsPayload)) {
-			imageUrls = imageUrlsPayload;
-		} else if (
-			typeof imageUrlsPayload === "string" &&
-			imageUrlsPayload.trim()
-		) {
-			try {
-				const parsed = JSON.parse(imageUrlsPayload);
-				if (Array.isArray(parsed)) imageUrls = parsed;
-			} catch {
-				const clean = unescapeHtml(imageUrlsPayload);
-				try {
-					const parsed = JSON.parse(clean);
-					if (Array.isArray(parsed)) imageUrls = parsed;
-				} catch {}
-			}
-		}
-
-		if (imageUrls.length === 0 && Array.isArray(data.imageUrls)) {
-			imageUrls = data.imageUrls;
-		}
+		const parsedPayload = parseImageUrlsPayload(imageUrlsPayload);
+		const imageUrls = resolveQuizImageUrls(data, parsedPayload);
 
 		const rawTopics =
 			data.topics?.covered || data.mostRecentQuery?.topics?.covered || [];
@@ -288,8 +928,154 @@
 	}
 
 	/**
+	 * Determines the normalized question type from raw question properties.
+	 *
+	 * @param {object} q - Raw quiz question object.
+	 * @returns {string} One of 'MULTIPLE_CHOICE', 'MULTIPLE_SELECT', 'FILL_IN_THE_BLANK', or 'SHORT_ANSWER'.
+	 */
+	function determineQuestionType(q) {
+		const rawType = (q.type || "").toLowerCase();
+		if (
+			rawType === "multiple_select" ||
+			(!rawType &&
+				q.answerOptions?.filter((o) => o.isCorrect).length > 1)
+		) {
+			return "MULTIPLE_SELECT";
+		}
+		if (
+			rawType === "fill_in_the_blank" ||
+			(!rawType && q.bestAnswer !== undefined)
+		) {
+			return "FILL_IN_THE_BLANK";
+		}
+		if (
+			rawType === "short_answer" ||
+			(!rawType && q.grading !== undefined)
+		) {
+			return "SHORT_ANSWER";
+		}
+		return "MULTIPLE_CHOICE";
+	}
+
+	/**
+	 * Compiles grading attributes and misconceptions into a formatted rubric string for short answer questions.
+	 *
+	 * @param {object|undefined} grading - Grading rubric metadata object.
+	 * @returns {string} Formatted rubric text.
+	 */
+	function buildRubricText(grading) {
+		if (!grading) return "";
+
+		let rubricText = "";
+		if (
+			grading.requiredAttributes &&
+			Array.isArray(grading.requiredAttributes)
+		) {
+			rubricText = grading.requiredAttributes
+				.map((attr) => `• ${attr}`)
+				.join("\n");
+		}
+
+		if (
+			grading.errors?.misconceptions &&
+			Array.isArray(grading.errors.misconceptions) &&
+			grading.errors.misconceptions.length > 0
+		) {
+			const misc = grading.errors.misconceptions
+				.map((m) => `⚠️ ${m}`)
+				.join("\n");
+			rubricText = rubricText ? `${rubricText}\n\n${misc}` : misc;
+		}
+
+		return rubricText;
+	}
+
+	/**
+	 * Formats an array of answer options into numbered card option, flag, and rationale fields.
+	 *
+	 * @param {Array<object>} [options=[]] - Raw answer options array.
+	 * @returns {object} Formatted option fields (option1..4, flag1..4, rationale1..4).
+	 */
+	function formatOptionFields(options = []) {
+		const fields = {};
+		for (let i = 0; i < 4; i++) {
+			const opt = options[i];
+			fields[`option${i + 1}`] = opt?.text || "";
+			fields[`flag${i + 1}`] = opt?.isCorrect ? "True" : "False";
+			fields[`rationale${i + 1}`] = opt?.rationale || "";
+		}
+		return fields;
+	}
+
+	/**
+	 * Gathers candidate media sources from question-level properties.
+	 *
+	 * @param {object} q - Raw question object.
+	 * @returns {Array<string|object>} Candidate media sources.
+	 */
+	function collectQuestionMediaCandidates(q) {
+		return [
+			...(Array.isArray(q.imageUrls) ? q.imageUrls : []),
+			...(Array.isArray(q.image_urls) ? q.image_urls : []),
+			...(Array.isArray(q.images) ? q.images : []),
+			...(q.imageUrl ? [q.imageUrl] : []),
+			...(q.image_url ? [q.image_url] : []),
+			...(q.image ? [q.image] : []),
+		];
+	}
+
+	/**
+	 * Resolves the target model answer for fill-in-the-blank and short-answer questions.
+	 *
+	 * @param {object} q - Raw question object.
+	 * @returns {string} Target answer string.
+	 */
+	function resolveTargetAnswer(q) {
+		return q.bestAnswer || q.grading?.modelAnswer || "";
+	}
+
+	/**
+	 * Resolves general rationale text from question or grading fields.
+	 *
+	 * @param {object} q - Raw question object.
+	 * @returns {string} General rationale text.
+	 */
+	function resolveGeneralRationale(q) {
+		return q.rationale || q.grading?.rationale || "";
+	}
+
+	/**
+	 * Formats acceptable alternative answers into a comma-separated string.
+	 *
+	 * @param {Array<string>|string|null|undefined} acceptableAnswers - Raw acceptable answers.
+	 * @returns {string} Comma-separated acceptable answers.
+	 */
+	function formatAcceptableAnswers(acceptableAnswers) {
+		if (Array.isArray(acceptableAnswers)) {
+			return acceptableAnswers.join(", ");
+		}
+		return acceptableAnswers || "";
+	}
+
+	/**
+	 * Checks whether extracted media metadata contains any media references.
+	 *
+	 * @param {{ hasMediaReference?: boolean, mediaUrl?: string, caption?: string, alt?: string }} media - Media metadata object.
+	 * @returns {boolean} True if any media property is present.
+	 */
+	function hasCardMediaReference(media) {
+		return Boolean(
+			media.hasMediaReference ||
+				media.mediaUrl ||
+				media.caption ||
+				media.alt,
+		);
+	}
+
+	/**
 	 * Maps raw quiz question objects to normalized flashcard objects across all four
 	 * supported question types (multiple_choice, multiple_select, fill_in_the_blank, short_answer).
+	 *
 	 * Preserves LaTeX formulas, option rationales, correctness flags, and media references.
 	 *
 	 * @param {Array<object>} quizData - Array of question objects from NotebookLM.
@@ -300,53 +1086,16 @@
 		if (!Array.isArray(quizData)) return [];
 
 		return quizData.map((q) => {
-			const media = extractQuestionMedia(q.question || "", imageUrls);
-			const rawType = (q.type || "").toLowerCase();
-
-			let questionType = "MULTIPLE_CHOICE";
-			if (
-				rawType === "multiple_select" ||
-				(!rawType &&
-					q.answerOptions?.filter((o) => o.isCorrect).length > 1)
-			) {
-				questionType = "MULTIPLE_SELECT";
-			} else if (
-				rawType === "fill_in_the_blank" ||
-				(!rawType && q.bestAnswer !== undefined)
-			) {
-				questionType = "FILL_IN_THE_BLANK";
-			} else if (
-				rawType === "short_answer" ||
-				(!rawType && q.grading !== undefined)
-			) {
-				questionType = "SHORT_ANSWER";
-			}
-
+			const candidateSources = collectQuestionMediaCandidates(q);
+			const media = extractQuestionMedia(
+				q.question || "",
+				imageUrls,
+				candidateSources,
+			);
+			const questionType = determineQuestionType(q);
 			const options = q.answerOptions || [];
-
-			let rubricText = "";
-			if (
-				q.grading?.requiredAttributes &&
-				Array.isArray(q.grading.requiredAttributes)
-			) {
-				rubricText = q.grading.requiredAttributes
-					.map((attr) => `• ${attr}`)
-					.join("\n");
-			}
-			if (
-				q.grading?.errors?.misconceptions &&
-				Array.isArray(q.grading.errors.misconceptions) &&
-				q.grading.errors.misconceptions.length > 0
-			) {
-				const misc = q.grading.errors.misconceptions
-					.map((m) => `⚠️ ${m}`)
-					.join("\n");
-				rubricText = rubricText ? `${rubricText}\n\n${misc}` : misc;
-			}
-
-			const acceptableList = Array.isArray(q.acceptableAnswers)
-				? q.acceptableAnswers.join(", ")
-				: q.acceptableAnswers || "";
+			const optionFields = formatOptionFields(options);
+			const rubricText = buildRubricText(q.grading);
 
 			return {
 				question: media.cleanQuestion,
@@ -357,32 +1106,71 @@
 				diagramUrl: media.mediaUrl || "",
 				diagramAlt: media.alt || "",
 				diagramCaption: media.caption || "",
+				hasMediaReference: hasCardMediaReference(media),
 				image: "",
 
 				// Multi-choice & Multi-select Options
-				option1: options[0]?.text || "",
-				flag1: options[0]?.isCorrect ? "True" : "False",
-				rationale1: options[0]?.rationale || "",
-
-				option2: options[1]?.text || "",
-				flag2: options[1]?.isCorrect ? "True" : "False",
-				rationale2: options[1]?.rationale || "",
-
-				option3: options[2]?.text || "",
-				flag3: options[2]?.isCorrect ? "True" : "False",
-				rationale3: options[2]?.rationale || "",
-
-				option4: options[3]?.text || "",
-				flag4: options[3]?.isCorrect ? "True" : "False",
-				rationale4: options[3]?.rationale || "",
+				...optionFields,
 
 				// Fill in the Blank & Short Answer target data
-				targetAnswer: q.bestAnswer || q.grading?.modelAnswer || "",
-				acceptableAnswers: acceptableList,
+				targetAnswer: resolveTargetAnswer(q),
+				acceptableAnswers: formatAcceptableAnswers(q.acceptableAnswers),
 				rubric: rubricText,
-				generalRationale: q.rationale || q.grading?.rationale || "",
+				generalRationale: resolveGeneralRationale(q),
 			};
 		});
+	}
+
+	/**
+	 * Field key mapping schema: [Anki field name, Card object property name, default fallback value].
+	 * @type {Array<[string, string, string]>}
+	 */
+	const FIELD_KEY_MAPPINGS = [
+		// Header fields
+		["Question", "question", ""],
+		["Hint", "hint", ""],
+		["Image", "image", ""],
+
+		// Option 1 (Rationale first)
+		["Option1", "option1", ""],
+		["Rationale1", "rationale1", ""],
+		["Flag1", "flag1", "False"],
+
+		// Option 2 (Flag first)
+		["Option2", "option2", ""],
+		["Flag2", "flag2", "False"],
+		["Rationale2", "rationale2", ""],
+
+		// Option 3 (Flag first)
+		["Option3", "option3", ""],
+		["Flag3", "flag3", "False"],
+		["Rationale3", "rationale3", ""],
+
+		// Option 4 (Flag first)
+		["Option4", "option4", ""],
+		["Flag4", "flag4", "False"],
+		["Rationale4", "rationale4", ""],
+
+		// Adaptive multi-format fields
+		["QuestionType", "questionType", "MULTIPLE_CHOICE"],
+		["TargetAnswer", "targetAnswer", ""],
+		["AcceptableAnswers", "acceptableAnswers", ""],
+		["Rubric", "rubric", ""],
+		["GeneralRationale", "generalRationale", ""],
+	];
+
+	/**
+	 * Constructs the 20-field note payload for a single card.
+	 *
+	 * @param {object} card - Flashcard object.
+	 * @returns {object} 20-field dictionary for Anki note creation.
+	 */
+	function buildNoteFields(card) {
+		const fields = {};
+		for (const [ankiKey, cardKey, fallback] of FIELD_KEY_MAPPINGS) {
+			fields[ankiKey] = card[cardKey] || fallback;
+		}
+		return fields;
 	}
 
 	/**
@@ -410,49 +1198,15 @@
 			});
 		}
 
-		return cards.map((card) => {
-			return {
-				deckName: targetDeck,
-				modelName: noteType,
-				fields: {
-					// Header fields
-					Question: card.question || "",
-					Hint: card.hint || "",
-					Image: card.image || "",
-
-					// Option 1 (Rationale first)
-					Option1: card.option1 || "",
-					Rationale1: card.rationale1 || "",
-					Flag1: card.flag1 || "False",
-
-					// Option 2 (Flag first)
-					Option2: card.option2 || "",
-					Flag2: card.flag2 || "False",
-					Rationale2: card.rationale2 || "",
-
-					// Option 3 (Flag first)
-					Option3: card.option3 || "",
-					Flag3: card.flag3 || "False",
-					Rationale3: card.rationale3 || "",
-
-					// Option 4 (Flag first)
-					Option4: card.option4 || "",
-					Flag4: card.flag4 || "False",
-					Rationale4: card.rationale4 || "",
-
-					// Adaptive multi-format fields
-					QuestionType: card.questionType || "MULTIPLE_CHOICE",
-					TargetAnswer: card.targetAnswer || "",
-					AcceptableAnswers: card.acceptableAnswers || "",
-					Rubric: card.rubric || "",
-					GeneralRationale: card.generalRationale || "",
-				},
-				options: {
-					allowDuplicate: true,
-				},
-				tags: allTags,
-			};
-		});
+		return cards.map((card) => ({
+			deckName: targetDeck,
+			modelName: noteType,
+			fields: buildNoteFields(card),
+			options: {
+				allowDuplicate: true,
+			},
+			tags: allTags,
+		}));
 	}
 
 	/**
@@ -502,9 +1256,13 @@
 	 *   cleanQuizTitle: function((string|null|undefined)): string,
 	 *   formatDeckTitle: function((string|null|undefined), (string|null|undefined), string=): string,
 	 *   formatErrorMessage: function((string|Array<string>|null|undefined)): string,
-	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string },
+	 *   extractQuestionMedia: function((string|null|undefined), Array<string>=, Array<string|object>=): { cleanQuestion: string, mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean },
 	 *   sanitizeTopicTags: function((Array<string>|null|undefined)): Array<string>,
 	 *   normalizeBlankAnswer: function((string|null|undefined)): string,
+	 *   isPlaceholderImageSrc: function(string): boolean,
+	 *   findImageUrlsDeep: function(*, Set<object>=): Array<string>,
+	 *   resolveCardsWithDomImages: function(Array<object>, (Document|Element|null)=): Array<object>,
+	 *   findMatchingDomImage: function(object, Array<Element>, Set<Element>=): (Element|null),
 	 *   parseQuizJson: function(string, (string|Array<string>|null|undefined)=): { quizData: Array<object>, title: (string|undefined), topicsCovered: Array<string>, imageUrls: Array<string> },
 	 *   mapQuizDataToCards: function(Array<object>, Array<string>=): Array<object>,
 	 *   mapCardsToAnkiNotes: function(Array<object>, string, string=, Array<string>=): Array<object>,
@@ -521,6 +1279,10 @@
 		extractQuestionMedia,
 		sanitizeTopicTags,
 		normalizeBlankAnswer,
+		isPlaceholderImageSrc,
+		findImageUrlsDeep,
+		resolveCardsWithDomImages,
+		findMatchingDomImage,
 		parseQuizJson,
 		mapQuizDataToCards,
 		mapCardsToAnkiNotes,

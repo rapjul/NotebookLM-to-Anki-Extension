@@ -94,6 +94,133 @@
 	};
 
 	/**
+	 * Extracts Base64 image payload and image format from a loaded HTMLImageElement using an off-screen canvas.
+	 *
+	 * Constrains canvas dimensions to maxDimension (default 2048px) and prioritizes WebP compression
+	/**
+	 * Calculates aspect-ratio-preserving dimensions bounded by a maximum dimension.
+	 *
+	 * @param {number} width - Original natural width.
+	 * @param {number} height - Original natural height.
+	 * @param {number} maxDimension - Maximum allowed width or height.
+	 * @returns {{ width: number, height: number }} Scaled dimensions.
+	 */
+	function calculateBoundedDimensions(width, height, maxDimension) {
+		if (width <= maxDimension && height <= maxDimension) {
+			return { width, height };
+		}
+		if (width >= height) {
+			return {
+				width: maxDimension,
+				height: Math.round((height * maxDimension) / width),
+			};
+		}
+		return {
+			width: Math.round((width * maxDimension) / height),
+			height: maxDimension,
+		};
+	}
+
+	/**
+	 * Serializes a canvas element to a data URL, preferring WebP with PNG fallback.
+	 *
+	 * @param {HTMLCanvasElement} canvas - The canvas element to serialize.
+	 * @returns {string|null} Valid data URL or null if failed or payload exceeds 5MB.
+	 */
+	function serializeCanvasToDataUrl(canvas) {
+		let dataUrl = canvas.toDataURL("image/webp", 0.85);
+		if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
+			dataUrl = canvas.toDataURL("image/png");
+		}
+		if (!dataUrl || !dataUrl.startsWith("data:image/")) return null;
+		if (dataUrl.length > 5 * 1024 * 1024) return null;
+		return dataUrl;
+	}
+
+	/**
+	 * Extracts Base64-encoded image data from a rendered DOM image element using an in-memory canvas.
+	 *
+	 * Bounds image dimensions to maxDimension (default 2048px) and prioritizes lightweight WebP encoding (0.85 quality)
+	 * with automatic PNG fallback to minimize memory footprint and avoid IPC message bottlenecks.
+	 *
+	 * @param {HTMLImageElement} img - The image element to extract data from.
+	 * @param {number} [maxDimension=2048] - Maximum dimension (width or height) to bound the image to.
+	 * @returns {{ base64: string, format: string }|null} Extracted Base64 string and file format extension, or null if unreadable.
+	 */
+	function extractDomImageBase64(img, maxDimension = 2048) {
+		try {
+			if (!img || typeof document === "undefined") return null;
+			if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
+				return null;
+			}
+
+			const { width, height } = calculateBoundedDimensions(
+				img.naturalWidth,
+				img.naturalHeight,
+				maxDimension,
+			);
+
+			const canvas = document.createElement("canvas");
+			canvas.width = width;
+			canvas.height = height;
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return null;
+
+			ctx.drawImage(img, 0, 0, width, height);
+
+			const dataUrl = serializeCanvasToDataUrl(canvas);
+			if (!dataUrl) return null;
+
+			const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+			if (!match) return null;
+
+			return {
+				format: match[1] || "webp",
+				base64: match[2],
+			};
+		} catch {
+			// Canvas may be tainted if cross-origin without CORS
+			return null;
+		}
+	}
+
+	/**
+	 * Dispatches a message to direct child iframes without recursive descendant traversal.
+	 *
+	 * @param {Document|HTMLElement} root - The document or container element to search for direct iframes.
+	 * @param {object} message - The message object to post.
+	 * @returns {void}
+	 */
+	function broadcastToFrames(root, message) {
+		try {
+			const container = root.document ? root.document : root;
+			if (!container || typeof container.querySelectorAll !== "function") {
+				return;
+			}
+			const iframes = container.querySelectorAll("iframe");
+			iframes.forEach((iframe) => {
+				try {
+					if (iframe.contentWindow) {
+						iframe.contentWindow.postMessage(message, "*");
+					}
+				} catch {
+					try {
+						iframe.contentWindow?.postMessage(message, "*");
+					} catch {}
+				}
+			});
+		} catch {
+			// Cross-origin restriction fallback
+		}
+	}
+
+	/**
+	 * Set of processed trigger IDs to prevent duplicate batch extractions.
+	 * @type {Set<string>}
+	 */
+	const handledTriggerIds = new Set();
+
+	/**
 	 * Initializes the data miner that listens for the app root element
 	 * with data-app-data and processes message triggers from the top window.
 	 *
@@ -103,6 +230,20 @@
 	 */
 	function initDataMiner() {
 		console.log("[Anki Bridge] 🔍 initDataMiner started.");
+
+		// In nested iframe setups (e.g. shim wrapping blob), forward trigger messages downward
+		window.addEventListener("message", (event) => {
+			if (event.data?.action === "ANKI_TRIGGER_EXTRACT") {
+				const triggerId = event.data.triggerId;
+				if (triggerId && handledTriggerIds.has(triggerId)) {
+					return;
+				}
+				const appRoot = document.querySelector("[data-app-data]");
+				if (!appRoot) {
+					broadcastToFrames(document, event.data);
+				}
+			}
+		});
 
 		/**
 		 * Helper to check for the [data-app-data] element and initialize setup if present.
@@ -116,7 +257,18 @@
 				);
 				window.top.postMessage({ action: "ANKI_MINER_READY" }, "*");
 				window.addEventListener("message", (event) => {
-					if (event.data.action === "ANKI_TRIGGER_EXTRACT") {
+					if (event.data?.action === "ANKI_TRIGGER_EXTRACT") {
+						const triggerId = event.data.triggerId;
+						if (triggerId) {
+							if (handledTriggerIds.has(triggerId)) {
+								return;
+							}
+							handledTriggerIds.add(triggerId);
+							if (handledTriggerIds.size > 50) {
+								const first = handledTriggerIds.values().next().value;
+								handledTriggerIds.delete(first);
+							}
+						}
 						console.log(
 							"[Anki Bridge] 📥 Data Miner received ANKI_TRIGGER_EXTRACT trigger message:",
 							event.data,
@@ -226,10 +378,94 @@
 				finalTitle,
 			);
 
-			const cards = NotebookLMToAnkiUtils.mapQuizDataToCards(
+			// 1. Initial card mapping from parsed quiz JSON
+			let cards = NotebookLMToAnkiUtils.mapQuizDataToCards(
 				quizData,
 				imageUrls,
 			);
+
+			// 2. Resolve cards with images in DOM if diagram URL is missing
+			cards = NotebookLMToAnkiUtils.resolveCardsWithDomImages(
+				cards,
+				document,
+			);
+
+			// 3. For any card with a resolved diagram URL or matching DOM image, attempt Base64 extraction
+			if (typeof document !== "undefined") {
+				const domImages = Array.from(document.querySelectorAll("img"));
+				const assignedBase64Images = new Set();
+				cards = cards.map((card) => {
+					if (card.imageBase64) return card;
+
+					const matchingImg =
+						NotebookLMToAnkiUtils.findMatchingDomImage(
+							card,
+							domImages,
+							assignedBase64Images,
+						);
+
+					if (matchingImg) {
+						assignedBase64Images.add(matchingImg);
+						const renderedSrc = (
+							matchingImg.currentSrc ||
+							matchingImg.src ||
+							""
+						).trim();
+						if (
+							!NotebookLMToAnkiUtils.isPlaceholderImageSrc(
+								renderedSrc,
+							)
+						) {
+							const extracted = extractDomImageBase64(matchingImg);
+							if (extracted) {
+								return {
+									...card,
+									diagramUrl:
+										card.diagramUrl || matchingImg.src,
+									imageBase64: extracted.base64,
+									imageFormat: extracted.format,
+								};
+							}
+						}
+					}
+					return card;
+				});
+			}
+
+			// 4. Detailed Image Analysis and Debug Logging
+			const imagesFound = cards.filter(
+				(c) =>
+					c.hasMediaReference ||
+					c.diagramUrl ||
+					c.diagramCaption ||
+					c.diagramAlt,
+			).length;
+			const imagesResolved = cards.filter((c) => Boolean(c.diagramUrl)).length;
+			const imagesMissing = imagesFound - imagesResolved;
+
+			console.log(
+				`[Anki Bridge] 🖼️ Media analysis: ${imagesFound} image(s) found in quiz (${imagesResolved} resolved, ${imagesMissing} missing).`,
+			);
+
+			cards.forEach((card, idx) => {
+				if (
+					card.hasMediaReference ||
+					card.diagramUrl ||
+					card.diagramCaption ||
+					card.diagramAlt
+				) {
+					if (card.diagramUrl) {
+						console.log(
+							`[Anki Bridge] 🖼️ Card #${idx + 1}: Found image reference. Resolved URL: ${card.diagramUrl} (Alt: "${card.diagramAlt || ""}", Caption: "${card.diagramCaption || ""}")`,
+						);
+					} else {
+						console.warn(
+							`[Anki Bridge] ⚠️ Card #${idx + 1}: Image reference found but URL could not be resolved from data-app-data or DOM. (Alt: "${card.diagramAlt || ""}", Caption: "${card.diagramCaption || ""}"). Tip: Navigate to this question in NotebookLM and re-export.`,
+						);
+					}
+				}
+			});
+
 			console.log(
 				"[Anki Bridge] 🗃️ Mapped cards count:",
 				cards.length,
@@ -254,6 +490,8 @@
 						),
 					quizTitle: NotebookLMToAnkiUtils.cleanQuizTitle(quizTitle),
 					topicsCovered: sanitizedTopics,
+					imagesFound: imagesFound,
+					imagesResolved: imagesResolved,
 				},
 				"*",
 			);
@@ -344,15 +582,15 @@
 					event.data.count,
 					"Skipped:",
 					event.data.skipped,
+					"Images exported:",
+					event.data.imagesExported !== undefined
+						? event.data.imagesExported
+						: "N/A",
+					"Images found:",
+					event.data.imagesFound !== undefined
+						? event.data.imagesFound
+						: "N/A",
 				);
-				if (
-					event.data.mediaLogs &&
-					Array.isArray(event.data.mediaLogs)
-				) {
-					for (const logLine of event.data.mediaLogs) {
-						console.log(`[Anki Media Summary] ${logLine}`);
-					}
-				}
 				isExporting = false;
 				updateButtonState(
 					"success",
@@ -371,6 +609,8 @@
 				console.log(
 					"[Anki Bridge] 📦 Extracted cards received on top window:",
 					event.data.cards?.length,
+					"Images found:",
+					event.data.imagesFound !== undefined ? event.data.imagesFound : 0,
 				);
 				handleExtractedData(
 					event.data.cards,
@@ -378,6 +618,8 @@
 					event.data.nbTitle,
 					event.data.quizTitle,
 					event.data.topicsCovered,
+					event.data.imagesFound,
+					event.data.imagesResolved,
 				).catch((err) => {
 					console.error(
 						"[Anki Bridge] ❌ handleExtractedData error:",
@@ -425,6 +667,8 @@
 	 * @param {string} nbTitle - The notebook title.
 	 * @param {string} quizTitle - The quiz artifact title.
 	 * @param {Array<string>} [topicsCovered=[]] - Sanitized topic tags to attach to Anki notes.
+	 * @param {number} [imagesFound=0] - Number of cards with image references found in quiz.
+	 * @param {number} [imagesResolved=0] - Number of cards with image URLs successfully resolved.
 	 * @returns {Promise<void>}
 	 */
 	async function handleExtractedData(
@@ -433,6 +677,8 @@
 		nbTitle,
 		quizTitle,
 		topicsCovered = [],
+		imagesFound = 0,
+		imagesResolved = 0,
 	) {
 		const domQuizTitle = getQuizTitle();
 		console.log(
@@ -457,6 +703,10 @@
 			"Cards Count:",
 			cards.length,
 		);
+		console.log(
+			`[Anki Bridge] 🖼️ Images found in quiz: ${imagesFound} (${imagesResolved} ready to export)`,
+		);
+
 		// Prevent duplicate extraction processing if already extracting/exporting
 		if (isExporting) {
 			console.warn(
@@ -524,6 +774,7 @@
 						resolvedDeckTitle,
 						userAction,
 						topicsCovered,
+						imagesFound,
 					);
 				},
 			);
@@ -537,6 +788,7 @@
 				finalDeckTitle,
 				"merge",
 				topicsCovered,
+				imagesFound,
 			);
 		}
 	}
@@ -549,6 +801,7 @@
 	 * @param {string} deckTitle - The title of the deck.
 	 * @param {string} duplicateAction - Resolution strategy ("merge", "increment", "overwrite").
 	 * @param {Array<string>} [topicsCovered=[]] - Array of sanitized topic tags.
+	 * @param {number} [imagesFound=0] - Number of cards with image references found in quiz.
 	 * @returns {Promise<void>}
 	 */
 	async function sendBatchToAnkiBackground(
@@ -556,6 +809,7 @@
 		deckTitle,
 		duplicateAction,
 		topicsCovered = [],
+		imagesFound = 0,
 	) {
 		let res;
 		try {
@@ -565,6 +819,7 @@
 				deckTitle: deckTitle,
 				duplicateAction: duplicateAction,
 				topicsCovered: topicsCovered,
+				imagesFound: imagesFound,
 			});
 		} catch (err) {
 			console.error(
@@ -582,6 +837,22 @@
 				console.log(`[Anki Background Media] ${logLine}`);
 			}
 		}
+
+		const exportedImgCount =
+			typeof res?.imagesExported === "number" ? res.imagesExported : 0;
+		const foundImgCount =
+			typeof res?.imagesFound === "number" ? res.imagesFound : imagesFound;
+
+		console.log(
+			`[Anki Bridge] 🖼️ Media summary: ${exportedImgCount} of ${foundImgCount} image(s) successfully exported to Anki.`,
+		);
+
+		if (foundImgCount > exportedImgCount) {
+			console.warn(
+				`[Anki Bridge] ⚠️ ${foundImgCount - exportedImgCount} image(s) were not exported. If an image was lazy-loaded, please navigate to that question in NotebookLM and click Anki Export again.`,
+			);
+		}
+
 		if (res?.success) {
 			window.top.postMessage(
 				{
@@ -589,6 +860,8 @@
 					count: res.count,
 					deck: deckTitle,
 					skipped: res.skipped,
+					imagesFound: foundImgCount,
+					imagesExported: exportedImgCount,
 					mediaLogs: res.mediaLogs || [],
 				},
 				"*",
@@ -713,7 +986,9 @@
 
 	/**
 	 * Attempts to retrieve the quiz title from the DOM.
+	 *
 	 * Checks the current document and the top document if within an iframe.
+	 *
 	 * @returns {string|null} The extracted quiz title, or null if not found.
 	 */
 	function getQuizTitle() {
@@ -796,15 +1071,11 @@
 					return;
 				}
 			}
-			const iframes = document.querySelectorAll("iframe");
-			iframes.forEach((iframe) => {
-				iframe.contentWindow.postMessage(
-					{
-						action: "ANKI_TRIGGER_EXTRACT",
-						notebookTitle: deckName,
-					},
-					"*",
-				);
+			const triggerId = `extract_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+			broadcastToFrames(document, {
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: deckName,
+				triggerId: triggerId,
 			});
 		};
 		return btn;

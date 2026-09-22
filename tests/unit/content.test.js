@@ -255,6 +255,50 @@ test("content: data miner detection and batch extraction", async (t) => {
 	);
 
 	await t.test(
+		"ANKI_TRIGGER_EXTRACT deduplicates identical triggerId to prevent multiple extractions",
+		async () => {
+			let extractionCount = 0;
+			/**
+			 * Listener for messages posted back to window.
+			 * @param {object} event - Message event.
+			 * @returns {void}
+			 */
+			const messageHandler = (event) => {
+				if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+					extractionCount++;
+				}
+			};
+			mockDOM.window.addEventListener("message", messageHandler);
+
+			const triggerId = "test-dedup-trigger-" + Date.now();
+			mockDOM.window.postMessage({
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: "Organic Chemistry",
+				triggerId,
+			});
+
+			await flushPromises();
+
+			// Send duplicate trigger with identical triggerId
+			mockDOM.window.postMessage({
+				action: "ANKI_TRIGGER_EXTRACT",
+				notebookTitle: "Organic Chemistry",
+				triggerId,
+			});
+
+			await flushPromises();
+			await new Promise((resolve) => origSetTimeout(resolve, 30));
+
+			mockDOM.window.removeEventListener("message", messageHandler);
+			assert.equal(
+				extractionCount,
+				1,
+				"Duplicate triggerId should not trigger multiple extractions",
+			);
+		},
+	);
+
+	await t.test(
 		"ANKI_TRIGGER_EXTRACT resolves data-image-urls and covered topics for multi-format quiz",
 		async () => {
 			mockDOM.window.postMessage({
@@ -316,6 +360,231 @@ test("content: data miner detection and batch extraction", async (t) => {
 				action: "ANKI_REAL_SUCCESS",
 				count: 0,
 			});
+		},
+	);
+
+	await t.test(
+		"preserves 1-to-1 matching during Base64 capture when cards share generic alt text",
+		async () => {
+			const quizWithGenericAlts = JSON.stringify({
+				quiz: [
+					{
+						question: "First circuit diagram:\n\n![Diagram](image_reference_index:0)",
+						options: ["Resistor", "Capacitor", "Inductor", "Diode"],
+						answer: 0,
+					},
+					{
+						question: "Second circuit diagram:\n\n![Diagram](image_reference_index:1)",
+						options: ["Series", "Parallel", "Bridge", "Mesh"],
+						answer: 1,
+					},
+				],
+			});
+
+			appRoot.setAttribute("data-app-data", quizWithGenericAlts);
+			appRoot.setAttribute(
+				"data-image-urls",
+				JSON.stringify([
+					"https://example.com/circuit1.png",
+					"https://example.com/circuit2.png",
+				]),
+			);
+
+			const img1 = mockDOM.document.createElement("img");
+			img1.src = "https://example.com/circuit1.png";
+			img1.alt = "Diagram";
+			img1.naturalWidth = 200;
+			img1.naturalHeight = 200;
+			img1.complete = true;
+			mockDOM.document.body.appendChild(img1);
+
+			const img2 = mockDOM.document.createElement("img");
+			img2.src = "https://example.com/circuit2.png";
+			img2.alt = "Diagram";
+			img2.naturalWidth = 200;
+			img2.naturalHeight = 200;
+			img2.complete = true;
+			mockDOM.document.body.appendChild(img2);
+
+			const origListeners = mockChrome.runtime.onMessage.listeners;
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({ success: true, count: 2, skipped: 0 });
+						return true;
+					}
+				},
+			];
+
+			try {
+				await new Promise((resolve, reject) => {
+					/**
+					 * Message handler waiting for ANKI_EXTRACTED_DATA.
+					 * @param {object} event - Message event.
+					 * @returns {void}
+					 */
+					const messageHandler = (event) => {
+						if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							try {
+								assert.equal(event.data.cards.length, 2);
+								assert.notEqual(
+									event.data.cards[0].diagramUrl,
+									event.data.cards[1].diagramUrl,
+									"Cards sharing generic alt text must be assigned distinct DOM images",
+								);
+								assert.ok(
+									event.data.cards[0].imageBase64,
+									"Card 0 should have extracted imageBase64",
+								);
+								assert.ok(
+									event.data.cards[1].imageBase64,
+									"Card 1 should have extracted imageBase64",
+								);
+								resolve();
+							} catch (err) {
+								reject(err);
+							}
+						} else if (event.data?.action === "ANKI_REAL_FAIL") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							reject(new Error(event.data.error));
+						}
+					};
+
+					mockDOM.window.addEventListener("message", messageHandler);
+					mockDOM.window.postMessage({
+						action: "ANKI_TRIGGER_EXTRACT",
+						triggerId: "trigger-shared-alt-test",
+						notebookTitle: "Shared Alt Test",
+					});
+				});
+			} finally {
+				mockChrome.runtime.onMessage.listeners = origListeners;
+				img1.parentElement?.removeChild(img1);
+				img2.parentElement?.removeChild(img2);
+				appRoot.removeAttribute("data-image-urls");
+				appRoot.setAttribute("data-app-data", standardQuizJson);
+				mockDOM.window.postMessage({
+					action: "ANKI_REAL_SUCCESS",
+					count: 0,
+				});
+			}
+		},
+	);
+
+	await t.test(
+		"skips Base64 serialization when matching DOM image renders a lazy-load placeholder",
+		async () => {
+			const placeholderQuiz = JSON.stringify({
+				quiz: [
+					{
+						question:
+							"Lazy loaded diagram:\n\n![Circuit Diagram](image_reference_index:0)",
+						options: ["Resistor", "Capacitor"],
+						answer: 0,
+					},
+				],
+			});
+
+			appRoot.setAttribute("data-app-data", placeholderQuiz);
+			appRoot.setAttribute(
+				"data-image-urls",
+				JSON.stringify(["https://example.com/actual-highres.png"]),
+			);
+
+			const placeholderImg = mockDOM.document.createElement("img");
+			placeholderImg.src =
+				"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjwvc3ZnPg==";
+			placeholderImg.alt = "Circuit Diagram";
+			placeholderImg.setAttribute(
+				"data-src",
+				"https://example.com/actual-highres.png",
+			);
+			placeholderImg.naturalWidth = 200;
+			placeholderImg.naturalHeight = 200;
+			placeholderImg.complete = true;
+			mockDOM.document.body.appendChild(placeholderImg);
+
+			const origListeners = mockChrome.runtime.onMessage.listeners;
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({ success: true, count: 1, skipped: 0 });
+						return true;
+					}
+				},
+			];
+
+			try {
+				await new Promise((resolve, reject) => {
+					/**
+					 * Message handler waiting for ANKI_EXTRACTED_DATA.
+					 * @param {object} event - Message event.
+					 * @returns {void}
+					 */
+					const messageHandler = (event) => {
+						if (event.data?.action === "ANKI_EXTRACTED_DATA") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							try {
+								assert.equal(event.data.cards.length, 1);
+								const card = event.data.cards[0];
+								assert.equal(
+									card.diagramUrl,
+									"https://example.com/actual-highres.png",
+									"Card should retain high-resolution URL from data-src",
+								);
+								assert.equal(
+									card.imageBase64,
+									undefined,
+									"Placeholder DOM image must not be serialized to Base64",
+								);
+								resolve();
+							} catch (err) {
+								reject(err);
+							}
+						} else if (event.data?.action === "ANKI_REAL_FAIL") {
+							mockDOM.window.removeEventListener(
+								"message",
+								messageHandler,
+							);
+							reject(new Error(event.data.error));
+						}
+					};
+
+					mockDOM.window.addEventListener("message", messageHandler);
+					mockDOM.window.postMessage({
+						action: "ANKI_TRIGGER_EXTRACT",
+						triggerId: "trigger-placeholder-test",
+						notebookTitle: "Placeholder Test",
+					});
+				});
+			} finally {
+				mockChrome.runtime.onMessage.listeners = origListeners;
+				placeholderImg.parentElement?.removeChild(placeholderImg);
+				appRoot.removeAttribute("data-image-urls");
+				appRoot.setAttribute("data-app-data", standardQuizJson);
+				mockDOM.window.postMessage({
+					action: "ANKI_REAL_SUCCESS",
+					count: 0,
+				});
+			}
 		},
 	);
 
@@ -884,6 +1153,65 @@ test("content: extracted cards batch dispatch", async (t) => {
 							"https://lh3.googleusercontent.com/test-circuit-topwindow.png",
 						);
 						assert.equal(card.diagramAlt, "Voltage Source Diagram");
+						resolve();
+					} else {
+						setTimeout(check, 10);
+					}
+				};
+				check();
+			});
+		},
+	);
+
+	await t.test(
+		"handleExtractedData passes imagesFound to sendBatchToAnki runtime message",
+		async () => {
+			/** @type {Array<object>} */
+			const sentMessages = [];
+
+			mockChrome.runtime.onMessage.listeners = [
+				(msg, sender, sendResponse) => {
+					sentMessages.push(msg);
+					if (msg.action === "checkDeckExists") {
+						sendResponse({ success: true, exists: false });
+						return true;
+					}
+					if (msg.action === "sendBatchToAnki") {
+						sendResponse({
+							success: true,
+							count: 1,
+							skipped: 0,
+							imagesFound: 1,
+							imagesExported: 1,
+						});
+						return true;
+					}
+				},
+			];
+
+			mockDOM.window.postMessage({
+				action: "ANKI_EXTRACTED_DATA",
+				cards: [
+					{
+						question: "Circuit question with image",
+						diagramUrl: "https://lh3.googleusercontent.com/circuit.png",
+						hasMediaReference: true,
+					},
+				],
+				deckTitle: "NotebookLM::EE::Quizzes::Images",
+				nbTitle: "EE",
+				quizTitle: "Images",
+				imagesFound: 1,
+				imagesResolved: 1,
+			});
+
+			await new Promise((resolve) => {
+				const check = () => {
+					const sendMsg = sentMessages.find(
+						(m) => m.action === "sendBatchToAnki",
+					);
+					if (sendMsg) {
+						assert.equal(sendMsg.imagesFound, 1);
 						resolve();
 					} else {
 						setTimeout(check, 10);

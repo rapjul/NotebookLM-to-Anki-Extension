@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/chrome-manifest",
   "manifest_version": 3,
   "name": "NotebookLM to Anki",
-  "version": "4.0.1",
-  "version_name": "4.0.1",
+  "version": "4.1.0",
+  "version_name": "4.1.0",
   "description": "Exports NotebookLM Quizzes to Anki",
   "permissions": ["storage", "scripting", "cookies", "declarativeNetRequest"],
   "host_permissions": [
@@ -27,6 +27,14 @@
       "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "notebooklm-to-anki@rapjul.github.io",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "background": {

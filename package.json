@@ -1,6 +1,6 @@
 {
   "name": "notebooklm-to-anki",
-  "version": "4.0.1",
+  "version": "4.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -9,12 +9,15 @@
     "build": "node scripts/build.js",
     "build:chrome": "node scripts/build.js --target=chrome",
     "build:firefox": "node scripts/build.js --target=firefox",
-    "lint": "web-ext lint --config .web-ext-config.cjs",
+    "lint": "node scripts/check-complexity.js && node scripts/lint.js",
+    "lint:complexity": "node scripts/check-complexity.js",
+    "lint:source": "web-ext lint --config .web-ext-config.cjs",
     "test": "node --test tests/**/*.test.js",
     "test:watch": "node --test --watch tests/**/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage tests/**/*.test.js"
   },
   "devDependencies": {
+    "acorn": "^8.18.0",
     "web-ext": "^10.6.0"
   }
 }

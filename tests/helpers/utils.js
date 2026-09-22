@@ -76,11 +76,39 @@ export const normalizeBlankAnswer =
 	globalThis.NotebookLMToAnkiUtils.normalizeBlankAnswer;
 
 /**
+ * Re-exported isPlaceholderImageSrc utility.
+ * @type {function(string): boolean}
+ */
+export const isPlaceholderImageSrc =
+	globalThis.NotebookLMToAnkiUtils.isPlaceholderImageSrc;
+
+/**
  * Re-exported normalizeQuestionText utility.
  * @type {function(string|null|undefined): string}
  */
 export const normalizeQuestionText =
 	globalThis.NotebookLMToAnkiUtils.normalizeQuestionText;
+
+/**
+ * Re-exported findImageUrlsDeep utility.
+ * @type {function(*, Set<object>=): Array<string>}
+ */
+export const findImageUrlsDeep =
+	globalThis.NotebookLMToAnkiUtils.findImageUrlsDeep;
+
+/**
+ * Re-exported resolveCardsWithDomImages utility.
+ * @type {function(Array<object>, (Document|Element|null)=): Array<object>}
+ */
+export const resolveCardsWithDomImages =
+	globalThis.NotebookLMToAnkiUtils.resolveCardsWithDomImages;
+
+/**
+ * Re-exported findMatchingDomImage utility.
+ * @type {function(object, Array<Element>, Set<Element>=): (Element|null)}
+ */
+export const findMatchingDomImage =
+	globalThis.NotebookLMToAnkiUtils.findMatchingDomImage;
 
 /**
  * Re-exported filterDuplicateNotes utility.

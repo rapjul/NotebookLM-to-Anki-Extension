@@ -1188,6 +1188,8 @@ test("background: media downloading and embedding", async (t) => {
 			});
 
 			assert.equal(response.success, true);
+			assert.equal(response.imagesFound, 1);
+			assert.equal(response.imagesExported, 1);
 
 			const mediaCall = ankiCalls.find(
 				(c) =>
@@ -1217,6 +1219,165 @@ test("background: media downloading and embedding", async (t) => {
 					`<img src="${mediaCall.params.filename}" alt="Pre-resolved Circuit Diagram" title="Pre-resolved Circuit Diagram">`,
 				),
 			);
+		},
+	);
+
+	await t.test(
+		"reports imagesFound and imagesExported counts accurately in response envelope",
+		async () => {
+			const mixedBatch = [
+				{
+					question: "Q1 with valid media",
+					diagramUrl: "https://lh3.googleusercontent.com/q1.png",
+					imageBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+					imageFormat: "png",
+					diagramAlt: "Alt1",
+					hasMediaReference: true,
+					option1: "A",
+					flag1: "True",
+				},
+				{
+					question: "Q2 without media",
+					diagramUrl: "",
+					hasMediaReference: false,
+					option1: "B",
+					flag1: "True",
+				},
+			];
+
+			const response = await sendRuntimeMessage(messageListener, {
+				action: "sendBatchToAnki",
+				deckTitle: "ReportDeck",
+				duplicateAction: "increment",
+				batchData: mixedBatch,
+				imagesFound: 1,
+			});
+
+			assert.equal(response.success, true);
+			assert.equal(response.imagesFound, 1);
+			assert.equal(response.imagesExported, 1);
+		},
+	);
+
+	await t.test(
+		"preserves imagesFound, imagesExported, and mediaLogs in error response envelope when note creation fails",
+		async () => {
+			const origFetchHandler = fetchHandler;
+			fetchHandler = async (url, options) => {
+				if (options?.body) {
+					try {
+						const body = JSON.parse(options.body);
+						if (body.action === "addNotes") {
+							throw new Error("AnkiConnect database locked");
+						}
+					} catch (e) {
+						if (e.message === "AnkiConnect database locked") throw e;
+					}
+				}
+				return origFetchHandler(url, options);
+			};
+
+			try {
+				const response = await sendRuntimeMessage(messageListener, {
+					action: "sendBatchToAnki",
+					deckTitle: "FailDeck",
+					duplicateAction: "increment",
+					batchData: [
+						{
+							question: "Q with media that fails on addNotes",
+							diagramUrl:
+								"https://lh3.googleusercontent.com/success-media.png",
+							imageBase64:
+								"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+							imageFormat: "png",
+							diagramAlt: "FailAlt",
+							hasMediaReference: true,
+							option1: "A",
+							flag1: "True",
+						},
+					],
+					imagesFound: 1,
+				});
+
+				assert.equal(response.success, false);
+				assert.ok(response.error.includes("AnkiConnect database locked"));
+				assert.equal(response.imagesFound, 1);
+				assert.equal(response.imagesExported, 1);
+				assert.ok(Array.isArray(response.mediaLogs));
+				assert.ok(response.mediaLogs.length >= 1);
+				assert.ok(
+					response.mediaLogs.some((log) =>
+						log.includes("Successfully"),
+					),
+				);
+			} finally {
+				fetchHandler = origFetchHandler;
+			}
+		},
+	);
+
+	await t.test(
+		"downloads and persists AVIF format images via storeMediaFile",
+		async () => {
+			const ankiCalls = [];
+			const origFetchHandler = fetchHandler;
+
+			// Construct synthetic AVIF binary buffer (ftypavif box)
+			const avifBytes = new Uint8Array([
+				0x00, 0x00, 0x00, 0x10, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76,
+				0x69, 0x66, 0x00, 0x00, 0x00, 0x00,
+			]);
+
+			fetchHandler = async (url, options) => {
+				if (url.includes("lh3.googleusercontent.com")) {
+					return {
+						ok: true,
+						status: 200,
+						headers: {
+							get: (h) =>
+								h === "content-type" ? "image/avif" : null,
+						},
+						arrayBuffer: async () => avifBytes.buffer,
+					};
+				}
+				const parsed = options?.body ? JSON.parse(options.body) : {};
+				ankiCalls.push(parsed);
+				return origFetchHandler(url, options);
+			};
+
+			try {
+				const cardWithAvifMedia = {
+					question: "What is depicted in this AVIF schematic?",
+					diagramUrl:
+						"https://lh3.googleusercontent.com/schematic.avif",
+					diagramAlt: "AVIF Schematic",
+					hasMediaReference: true,
+					option1: "A",
+					flag1: "True",
+				};
+
+				const response = await sendRuntimeMessage(messageListener, {
+					action: "sendBatchToAnki",
+					deckTitle: "AvifDeck",
+					duplicateAction: "increment",
+					batchData: [cardWithAvifMedia],
+				});
+
+				assert.equal(response.success, true);
+				assert.equal(response.imagesExported, 1);
+
+				const storeMediaCall = ankiCalls.find(
+					(c) =>
+						c.action === "storeMediaFile" &&
+						c.params.filename.endsWith(".avif"),
+				);
+				assert.ok(
+					storeMediaCall,
+					"storeMediaFile should have been called with .avif filename",
+				);
+			} finally {
+				fetchHandler = origFetchHandler;
+			}
 		},
 	);
 });

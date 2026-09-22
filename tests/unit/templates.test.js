@@ -191,8 +191,13 @@ test("templates: manifest.json integrity", () => {
 	assert.ok(manifest.permissions.includes("cookies"));
 	assert.ok(manifest.permissions.includes("declarativeNetRequest"));
 
-	// Verify background service worker is declared
+	// Verify background service worker is declared and Gecko scripts array is omitted
 	assert.equal(manifest.background?.service_worker, "background.js");
+	assert.equal(
+		manifest.background?.scripts,
+		undefined,
+		"manifest.json should omit background.scripts to ensure Chromium MV3 compatibility",
+	);
 
 	// Verify host permissions include Google domains
 	assert.ok(manifest.host_permissions.includes("https://lh3.google.com/*"));
