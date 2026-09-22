@@ -167,15 +167,15 @@ async function buildFirefox(version) {
 		{
 			sourceDir: FIREFOX_STAGING_DIR,
 			ignoreFiles: ["anki_templates/**", "anki_templates/*"],
-			warningsAsErrors: false,
+			warningsAsErrors: true,
 		},
 		{ shouldExitProgram: false },
 	);
 
-	if (lintResult.summary.errors > 0) {
+	if (lintResult.summary.errors > 0 || lintResult.summary.warnings > 0) {
 		fs.rmSync(FIREFOX_STAGING_DIR, { recursive: true, force: true });
 		throw new Error(
-			`Firefox extension validation failed with ${lintResult.summary.errors} error(s).`,
+			`Firefox extension validation failed with ${lintResult.summary.errors} error(s) and ${lintResult.summary.warnings} warning(s).`,
 		);
 	}
 

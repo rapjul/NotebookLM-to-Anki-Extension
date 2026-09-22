@@ -76,14 +76,14 @@ async function runLint() {
 			{
 				sourceDir: FIREFOX_LINT_DIR,
 				ignoreFiles: ["anki_templates/**", "anki_templates/*"],
-				warningsAsErrors: false,
+				warningsAsErrors: true,
 			},
 			{ shouldExitProgram: false },
 		);
 
-		if (lintResult.summary.errors > 0) {
+		if (lintResult.summary.errors > 0 || lintResult.summary.warnings > 0) {
 			throw new Error(
-				`Extension validation failed with ${lintResult.summary.errors} error(s).`,
+				`Extension validation failed with ${lintResult.summary.errors} error(s) and ${lintResult.summary.warnings} warning(s).`,
 			);
 		}
 	} finally {
