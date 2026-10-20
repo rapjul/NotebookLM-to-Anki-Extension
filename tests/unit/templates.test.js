@@ -273,3 +273,159 @@ test("templates: diagram image description toggle and mobile tap protection", ()
 		"styling.css should specify focus-visible outline for keyboard navigation",
 	);
 });
+
+test("templates: mobile multi-select tap shielding, validation, and fill-in-the-blank form submit", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+	const cssPath = path.join(srcDir, "anki_templates/styling.css");
+	const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+	assert.ok(
+		frontHtml.includes("window.__notebooklmAllowHostFlip = false;"),
+		"front.html should reset host flip state on card render",
+	);
+	assert.ok(
+		frontHtml.includes('btn.addEventListener("touchstart", handleOptionTap)'),
+		"front.html should attach touchstart handler to multi-select options to block host tap-to-flip",
+	);
+	assert.ok(
+		frontHtml.includes('btn = document.createElement("button")'),
+		"front.html should instantiate multi-select options as native buttons for mobile tap safety",
+	);
+	assert.ok(
+		frontHtml.includes('btn.setAttribute("onclick", "void(0)")'),
+		"front.html should assign onclick attribute to multi-select buttons for AnkiMobile tap detection",
+	);
+	assert.ok(
+		frontHtml.includes('pointer-events: none;'),
+		"front.html multi-select inner contents should disable pointer events so hit-test targets the button",
+	);
+	assert.ok(
+		frontHtml.includes('<form class="fitb-form fitb-container"'),
+		"front.html should wrap the fill-in-the-blank input in a form with scoped classes",
+	);
+	assert.ok(
+		frontHtml.includes('enterkeyhint="done"'),
+		"front.html fill-in-the-blank input should set enterkeyhint",
+	);
+	assert.ok(
+		frontHtml.includes('btn.className = "ms-option-btn tappable"'),
+		"front.html multi-select options should carry ms-option-btn class",
+	);
+	assert.ok(
+		frontHtml.includes("window.webkit.messageHandlers.cb.postMessage"),
+		"front.html should dispatch flip command via AnkiMobile WebKit message handler bridge",
+	);
+	assert.ok(
+		frontHtml.includes('addEventListener("submit", doSubmit)'),
+		"front.html should submit fill-in-the-blank answers via form submit",
+	);
+	assert.ok(
+		frontHtml.includes("inputEl.blur()"),
+		"front.html should blur input element on submit to dismiss mobile software keyboard",
+	);
+	assert.ok(
+		cssContent.includes("text-align: center;"),
+		"styling.css submit-btn should be centered",
+	);
+	// Multi-select validation
+	assert.ok(
+		frontHtml.includes("selectedOpts.size === 0"),
+		"front.html should require at least one choice before advancing multi-select",
+	);
+	assert.ok(
+		frontHtml.includes("btn-shake"),
+		"front.html should trigger shake animation when attempting to submit with zero selections",
+	);
+	assert.ok(
+		cssContent.includes(".ms-instruction-badge"),
+		"styling.css should style multi-select instruction badge",
+	);
+	assert.ok(
+		cssContent.includes(".ms-submit-btn.btn-disabled"),
+		"styling.css should style disabled submit button",
+	);
+	assert.ok(
+		cssContent.includes(".btn-shake"),
+		"styling.css should define shake animation for invalid submit attempts",
+	);
+	// Verify question type scoping
+	assert.ok(
+		frontHtml.includes('"qtype-" + questionType.toLowerCase()'),
+		"front.html should attach scoped question type class to wrapper",
+	);
+	assert.ok(
+		backHtml.includes('"qtype-" + questionType.toLowerCase()'),
+		"back.html should attach scoped question type class to wrapper",
+	);
+	// Verify MULTIPLE_CHOICE single-select behavior remains intact
+	assert.ok(
+		frontHtml.includes('btn.addEventListener("click", (e) => {\n\t\t\t\t\t\tsaveState();\n\t\t\t\t\t\tflipToBack();'),
+		"front.html single-choice multiple choice should retain instant auto-flip on selection",
+	);
+});
+
+test("templates: fill-in-the-blank skipped state feedback and continue button", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+	const cssPath = path.join(srcDir, "anki_templates/styling.css");
+	const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+	// CSS classes
+	assert.ok(
+		cssContent.includes(".card-skipped {"),
+		"styling.css should define .card-skipped",
+	);
+	assert.ok(
+		cssContent.includes(".card-skipped .feedback-header {"),
+		"styling.css should style .feedback-header within .card-skipped",
+	);
+	assert.ok(
+		cssContent.includes(".continue-btn.btn-skipped {"),
+		"styling.css should define .continue-btn.btn-skipped",
+	);
+	assert.ok(
+		cssContent.includes(".btn-skipped {"),
+		"styling.css should define .btn-skipped",
+	);
+
+	// Front template skipped state evaluation
+	assert.ok(
+		frontHtml.includes("const isSkipped = typedNorm.length === 0;"),
+		"front.html should determine isSkipped when typedNorm is empty",
+	);
+	assert.ok(
+		frontHtml.includes('"card-skipped"'),
+		"front.html should apply card-skipped class when skipped",
+	);
+	assert.ok(
+		frontHtml.includes('"Skipped"'),
+		"front.html should display Skipped header text when skipped",
+	);
+	assert.ok(
+		frontHtml.includes('"⤼ Skipped — Tap to Grade"'),
+		"front.html should update submit button with Skipped label and icon",
+	);
+
+	// Back template skipped state evaluation and grading button
+	assert.ok(
+		backHtml.includes("const isSkipped = normTyped.length === 0;"),
+		"back.html should determine isSkipped when normTyped is empty",
+	);
+	assert.ok(
+		backHtml.includes('"card-skipped"'),
+		"back.html should apply card-skipped class when skipped",
+	);
+	assert.ok(
+		backHtml.includes('"Continue (Mark Skipped)"'),
+		"back.html should provide Continue (Mark Skipped) button label",
+	);
+	assert.ok(
+		backHtml.includes("isSkipped = false"),
+		"back.html renderContinueButton should accept isSkipped flag",
+	);
+});

@@ -77,6 +77,9 @@
 
 <script>
 	(function () {
+		// Clean lifecycle reset for AnkiMobile's persistent WKWebView across cards
+		window.__notebooklmAllowHostFlip = false;
+
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
 		// EXCEPT when interacting with inputs, buttons, options, or hint.
 		/**
@@ -87,19 +90,33 @@
 		 * @returns {void}
 		 */
 		const interceptTap = (e) => {
+			if (window.__notebooklmAllowHostFlip) return;
+
+			// Interactive controls that should handle their own interactions
 			const isInteractive =
 				e.target &&
-				(e.target.closest(".option-block") ||
-					e.target.closest("#hint-toggle") ||
+				(e.target.closest(".fitb-input") ||
+					e.target.closest(".fitb-submit-btn") ||
+					e.target.closest(".fitb-form") ||
+					e.target.closest(".ms-option-btn") ||
+					e.target.closest(".ms-submit-btn") ||
+					e.target.closest(".mc-option-btn") ||
+					e.target.closest(".option-block") ||
 					e.target.closest(".submit-btn") ||
-					e.target.closest(".fitb-input") ||
 					e.target.closest(".sa-scratchpad") ||
-					e.target.closest(".question-media img") ||
-					e.target.closest(".diagram-alt-description"));
-			if (!isInteractive) {
-				e.stopPropagation();
-				if (e.cancelable) e.preventDefault();
+					e.target.closest(".sa-submit-btn") ||
+					e.target.closest(".tappable") ||
+					e.target.closest("#hint-toggle") ||
+					e.target.closest(".diagram-alt-description") ||
+					e.target.closest(".question-media img"));
+
+			if (isInteractive) {
+				return;
 			}
+
+			// Taps on non-interactive whitespace / background should not accidentally flip
+			e.stopPropagation();
+			if (e.cancelable) e.preventDefault();
 		};
 		window.addEventListener("click", interceptTap, true);
 		window.addEventListener("touchend", interceptTap, true);
@@ -156,6 +173,38 @@
 			}
 		}
 
+		/**
+		 * Normalizes a fill-in-the-blank user response or accepted answer string
+		 * by trimming, lowercasing, and stripping surrounding math dollar delimiters.
+		 *
+		 * @param {string|null|undefined} str - Raw answer string.
+		 * @returns {string} Normalized lowercase string.
+		 */
+		function normalizeBlank(str) {
+			if (!str) return "";
+			return String(str)
+				.trim()
+				.toLowerCase()
+				.replace(/^\$+|\$+$/g, "")
+				.trim();
+		}
+
+		/**
+		 * Stops touch/mouse events on an interactive element from bubbling up to the
+		 * host app's (e.g. AnkiMobile) tap-to-show-answer handler, which would otherwise
+		 * flip the card on the first tap.
+		 *
+		 * Click events are left alone so the element's own handlers still run.
+		 *
+		 * @param {HTMLElement} el - Interactive element to shield.
+		 * @returns {void}
+		 */
+		function shieldHostTap(el) {
+			["touchstart", "touchend", "mousedown", "mouseup", "pointerup"].forEach(
+				(type) => el.addEventListener(type, (e) => e.stopPropagation()),
+			);
+		}
+
 		// Flip card to back helper
 		/**
 		 * Dispatches answer revelation command to flip the card to the back side
@@ -164,16 +213,57 @@
 		 * @returns {void}
 		 */
 		function flipToBack() {
+			window.__notebooklmAllowHostFlip = true;
+			// 1. Anki Desktop
 			if (typeof pycmd !== "undefined") {
 				pycmd("ans");
-			} else if (typeof showAnswer !== "undefined") {
+				return;
+			}
+			// 2. AnkiDroid
+			if (typeof showAnswer !== "undefined") {
 				showAnswer();
-			} else {
+				return;
+			}
+			if (
+				typeof AnkiDroidJS !== "undefined" &&
+				typeof AnkiDroidJS.showAnswer !== "undefined"
+			) {
+				AnkiDroidJS.showAnswer();
+				return;
+			}
+			// 3. AnkiWeb
+			if (
+				typeof study !== "undefined" &&
+				typeof study.drawAnswer !== "undefined"
+			) {
+				study.drawAnswer();
+				return;
+			}
+			// 4. AnkiMobile (iOS WebKit message handler bridge)
+			if (
+				window.webkit &&
+				window.webkit.messageHandlers &&
+				window.webkit.messageHandlers.cb
+			) {
+				try {
+					window.webkit.messageHandlers.cb.postMessage(
+						JSON.stringify({ scheme: "ankitap", msg: "midCenter" }),
+					);
+				} catch (err) {}
+			}
+			if (window.anki && typeof window.sendMessage2 === "function") {
+				try {
+					window.sendMessage2("ankitap", "midCenter");
+				} catch (err) {}
+			}
+
+			// 5. Simulated keyboard event fallback
+			try {
 				const ev = document.createEvent("Event");
 				ev.initEvent("keypress", true, true);
 				ev.which = ev.keyCode = 13;
 				document.dispatchEvent(ev);
-			}
+			} catch (err) {}
 		}
 
 		try {
@@ -289,6 +379,14 @@
 				}
 			}
 
+			// Add question type scope class to the main wrapper
+			const wrapper = document.querySelector(".main-wrapper");
+			if (wrapper) {
+				wrapper.classList.add(
+					"qtype-" + questionType.toLowerCase().replace(/_/g, "-"),
+				);
+			}
+
 			const interactiveArea = document.getElementById(
 				"front-interactive-area",
 			);
@@ -297,10 +395,13 @@
 			if (questionType === "MULTIPLE_SELECT") {
 				// MULTIPLE SELECT: Checkboxes with "Check Answer" submit button
 				interactiveArea.innerHTML = `
-					<div class="options-list" id="front-options"></div>
-					<button class="submit-btn" id="ms-submit-btn">Check Answer</button>
+					<div class="options-list ms-options-list" id="front-options"></div>
+					<div class="ms-submit-btn submit-btn btn-disabled" id="ms-submit-btn" role="button" tabindex="0">Select at least 1 option</div>
+					<div id="ms-warning" class="ms-warning-text" style="display: none;">Please select at least one option before checking.</div>
 				`;
 				const container = document.getElementById("front-options");
+				const submitBtn = document.getElementById("ms-submit-btn");
+				const warningEl = document.getElementById("ms-warning");
 
 				// Shuffle options
 				for (let i = validItems.length - 1; i > 0; i--) {
@@ -320,25 +421,47 @@
 
 				const selectedOpts = new Set();
 
+				/**
+				 * Updates the submit button label and enabled/disabled state based on selection count.
+				 *
+				 * @returns {void}
+				 */
+				const updateSubmitState = () => {
+					if (selectedOpts.size > 0) {
+						submitBtn.classList.remove("btn-disabled");
+						submitBtn.textContent = "Check Answer";
+						if (warningEl) warningEl.style.display = "none";
+					} else {
+						submitBtn.classList.add("btn-disabled");
+						submitBtn.textContent = "Select at least 1 option";
+					}
+				};
+
 				validItems.forEach((item, index) => {
 					const originalLetter = item.dataset.opt;
 					const displayLetter = String.fromCharCode(65 + index);
 					const text = cleanMath(item.dataset.text || "");
 
-					const btn = document.createElement("div");
-					btn.className = "option-block ms-option";
+					const btn = document.createElement("button");
+					btn.type = "button";
+					btn.className = "ms-option-btn tappable";
+					btn.setAttribute("onclick", "void(0)");
 					btn.dataset.opt = originalLetter;
 
 					btn.innerHTML = `
-						<div class="option-content">
+						<div class="option-content" style="pointer-events: none;">
 							<span class="ms-checkbox"></span>
 							<span class="option-letter">${displayLetter}.</span>
 							<span>${text}</span>
 						</div>
 					`;
 
-					btn.addEventListener("click", (e) => {
-						e.stopPropagation();
+					/**
+					 * Toggles selection state for this option and synchronizes state to sessionStorage.
+					 *
+					 * @returns {void}
+					 */
+					const toggleOption = () => {
 						if (selectedOpts.has(originalLetter)) {
 							selectedOpts.delete(originalLetter);
 							btn.classList.remove("is-selected");
@@ -346,58 +469,250 @@
 							selectedOpts.add(originalLetter);
 							btn.classList.add("is-selected");
 						}
-					});
+						try {
+							sessionStorage.setItem(
+								"notebooklm_ms_sel_" + cardId,
+								JSON.stringify(Array.from(selectedOpts)),
+							);
+						} catch (err) {}
+						updateSubmitState();
+					};
 
+					let lastTouchTime = 0;
+
+					/**
+					 * Handles tap/touch events on this option, preventing host review flip
+					 * and suppressing ghost click events.
+					 *
+					 * @param {Event} e - Touch or click event.
+					 * @returns {void}
+					 */
+					const handleOptionTap = (e) => {
+						if (e.type === "touchstart") {
+							lastTouchTime = Date.now();
+							if (e.cancelable) e.preventDefault();
+							e.stopPropagation();
+							toggleOption();
+							return;
+						}
+						if (e.type === "click") {
+							// Suppress ghost click fired shortly after touchstart
+							if (Date.now() - lastTouchTime < 400) {
+								if (e.cancelable) e.preventDefault();
+								e.stopPropagation();
+								return;
+							}
+							toggleOption();
+						}
+					};
+
+					btn.addEventListener("touchstart", handleOptionTap);
+					btn.addEventListener("click", handleOptionTap);
 					container.appendChild(btn);
 				});
 
-				const submitBtn = document.getElementById("ms-submit-btn");
-				submitBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
+				/**
+				 * Submits multi-select selections and flips the card.
+				 * Enforces that at least one option must be selected before advancing.
+				 *
+				 * @param {Event} [e] - Optional trigger event.
+				 * @returns {void}
+				 */
+				const submitMultiSelect = (e) => {
+					if (selectedOpts.size === 0) {
+						if (e && e.cancelable) e.preventDefault();
+						if (e) e.stopPropagation();
+						if (warningEl) {
+							warningEl.style.display = "block";
+						}
+						submitBtn.classList.add("btn-shake");
+						setTimeout(() => {
+							submitBtn.classList.remove("btn-shake");
+						}, 500);
+						return;
+					}
+
 					try {
 						sessionStorage.setItem(
 							"notebooklm_ms_sel_" + cardId,
 							JSON.stringify(Array.from(selectedOpts)),
 						);
 					} catch (err) {}
+
+					window.__notebooklmAllowHostFlip = true;
+					submitBtn.textContent = "✓ Checked — Tap to Reveal";
 					flipToBack();
+				};
+
+				submitBtn.addEventListener("touchstart", submitMultiSelect, { passive: true });
+				submitBtn.addEventListener("mousedown", submitMultiSelect, { passive: true });
+				submitBtn.addEventListener("click", submitMultiSelect);
+				submitBtn.addEventListener("keydown", (e) => {
+					if (e.key === "Enter" || e.keyCode === 13) {
+						submitMultiSelect(e);
+					}
 				});
 			} else if (questionType === "FILL_IN_THE_BLANK") {
 				// FILL IN THE BLANK: Text input + Check Answer button
+				// A real <form> with a hidden submit button lets the mobile keyboard's Done/Go/Enter key trigger
+				// an implicit submit reliably across iOS and Android.
 				interactiveArea.innerHTML = `
-					<div class="fitb-container">
-						<input type="text" class="fitb-input" id="fitb-input" placeholder="Type your answer..." autocomplete="off" />
-						<button class="submit-btn" id="fitb-submit-btn">Check Answer</button>
-					</div>
+					<form class="fitb-form fitb-container" id="fitb-form" action="javascript:void(0)" autocomplete="off">
+						<input type="text" class="fitb-input" id="fitb-input" placeholder="Type your answer..." autocomplete="off" autocapitalize="off" enterkeyhint="done" />
+						<input type="submit" style="position: absolute; left: -9999px; width: 1px; height: 1px;" tabindex="-1" />
+						<div class="fitb-submit-btn submit-btn" id="fitb-submit-btn" role="button" tabindex="0">Check Answer</div>
+					</form>
+					<div id="fitb-feedback" class="fitb-feedback" style="display: none; margin-top: 15px;"></div>
 				`;
 
+				const formEl = document.getElementById("fitb-form");
 				const inputEl = document.getElementById("fitb-input");
 				const submitBtn = document.getElementById("fitb-submit-btn");
+				const feedbackBox = document.getElementById("fitb-feedback");
+				const targetAnswer = (
+					document.getElementById("d-target")?.textContent || ""
+				).trim();
+				const rawAcceptable = (
+					document.getElementById("d-acceptable")?.textContent || ""
+				).trim();
+				const generalRationale = (
+					document.getElementById("d-general-rationale")
+						?.textContent || ""
+				).trim();
+				let fitbSubmitted = false;
 
 				/**
-				 * Saves the typed fill-in-the-blank response to sessionStorage and flips the card.
+				 * Saves the typed fill-in-the-blank response to sessionStorage, displays inline feedback,
+				 * dismisses the software keyboard, and flips the card to the back side.
 				 *
-				 * @param {Event} [e] - Optional triggering click or keyboard event.
+				 * @param {Event} [e] - Optional triggering submit, click or keyboard event.
 				 * @returns {void}
 				 */
 				const doSubmit = (e) => {
-					if (e) e.stopPropagation();
+					if (e && e.cancelable) e.preventDefault();
+					if (fitbSubmitted) return;
+					fitbSubmitted = true;
+
 					const val = inputEl.value.trim();
+
+					// 1. Persist to sessionStorage for the Back template
 					try {
 						sessionStorage.setItem(
 							"notebooklm_typed_" + cardId,
 							val,
 						);
 					} catch (err) {}
+
+					// 2. Dismiss mobile virtual keyboard
+					inputEl.blur();
+
+					// 3. Normalize and evaluate
+					const typedNorm = normalizeBlank(val);
+					const targetNorm = normalizeBlank(targetAnswer);
+					const acceptedList = rawAcceptable
+						? rawAcceptable.split(",").map((s) => normalizeBlank(s))
+						: [];
+					const isSkipped = typedNorm.length === 0;
+					const isCorrect =
+						!isSkipped &&
+						(typedNorm === targetNorm ||
+							acceptedList.includes(typedNorm));
+
+					// 4. Reveal inline feedback on screen immediately (guarantees mobile responsiveness)
+					const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24" style="width:20px;height:20px;fill:#81c995;"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+					const iconClose = `<svg class="status-icon" viewBox="0 0 24 24" style="width:20px;height:20px;fill:#f28b82;"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+					const iconSkip = `<svg class="status-icon" viewBox="0 0 24 24" style="width:20px;height:20px;fill:#f9ab00;"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>`;
+
+					const cardClass = isCorrect
+						? "card-correct"
+						: isSkipped
+							? "card-skipped"
+							: "card-wrong";
+					const headerIcon = isCorrect
+						? iconCheck
+						: isSkipped
+							? iconSkip
+							: iconClose;
+					const headerText = isCorrect
+						? "That's right!"
+						: isSkipped
+							? "Skipped"
+							: "Not quite";
+
+					feedbackBox.innerHTML = `
+						<div class="feedback-card ${cardClass}">
+							<div class="feedback-header">
+								${headerIcon}
+								<span>${headerText}</span>
+							</div>
+							<div class="answer-row">
+								<span class="answer-label">Your answer:</span>
+								<span class="answer-value">${val || "<i>(No response entered)</i>"}</span>
+							</div>
+							${
+								!isCorrect && targetAnswer
+									? `
+							<div class="answer-row">
+								<span class="answer-label">Accepted answer:</span>
+								<span class="answer-value">${cleanMath(targetAnswer)}</span>
+							</div>`
+									: ""
+							}
+						</div>
+						${
+							generalRationale
+								? `
+						<div class="general-rationale-box">
+							<div class="rationale-heading">Explanation</div>
+							<div>${cleanMath(generalRationale)}</div>
+						</div>`
+								: ""
+						}
+					`;
+					feedbackBox.style.display = "block";
+					triggerMath(feedbackBox);
+
+					// 5. Update submit button label and style
+					if (isCorrect) {
+						submitBtn.textContent = "✓ Correct — Tap to Grade";
+						submitBtn.style.backgroundColor = "#81c995";
+						submitBtn.style.color = "#1e1e1e";
+					} else if (isSkipped) {
+						submitBtn.textContent = "⤼ Skipped — Tap to Grade";
+						submitBtn.style.backgroundColor = "#f9ab00";
+						submitBtn.style.color = "#1e1e1e";
+					} else {
+						submitBtn.textContent = "✕ Incorrect — Tap to Grade";
+						submitBtn.style.backgroundColor = "#f28b82";
+						submitBtn.style.color = "#1e1e1e";
+					}
+
+					// 6. Allow host taps through so a tap on the card flips to Back in AnkiMobile
+					window.__notebooklmAllowHostFlip = true;
+
+					// 7. Flip card to back helper (works on Desktop and AnkiDroid)
 					flipToBack();
 				};
 
-				submitBtn.addEventListener("click", doSubmit);
+				inputEl.addEventListener("input", () => {
+					try {
+						sessionStorage.setItem(
+							"notebooklm_typed_" + cardId,
+							inputEl.value.trim(),
+						);
+					} catch (err) {}
+				});
+
+				formEl.addEventListener("submit", doSubmit);
 				inputEl.addEventListener("keydown", (e) => {
-					if (e.key === "Enter") {
+					if (e.key === "Enter" || e.keyCode === 13) {
 						doSubmit(e);
 					}
 				});
+
+				submitBtn.addEventListener("touchstart", doSubmit, { passive: true });
+				submitBtn.addEventListener("mousedown", doSubmit, { passive: true });
+				submitBtn.addEventListener("click", doSubmit);
 				// Auto-focus input on desktop
 				setTimeout(() => inputEl.focus(), 150);
 			} else if (questionType === "SHORT_ANSWER") {
@@ -405,15 +720,30 @@
 				interactiveArea.innerHTML = `
 					<div class="sa-container">
 						<textarea class="sa-scratchpad" id="sa-scratchpad" placeholder="Draft your answer here (optional)..." rows="4"></textarea>
-						<button class="submit-btn" id="sa-submit-btn">Show Model Answer & Rubric</button>
+						<div class="sa-submit-btn submit-btn" id="sa-submit-btn" role="button" tabindex="0">Show Model Answer & Rubric</div>
 					</div>
 				`;
 
 				const scratchEl = document.getElementById("sa-scratchpad");
 				const submitBtn = document.getElementById("sa-submit-btn");
 
-				submitBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
+				scratchEl.addEventListener("input", () => {
+					try {
+						sessionStorage.setItem(
+							"notebooklm_sa_scratch_" + cardId,
+							scratchEl.value.trim(),
+						);
+					} catch (err) {}
+				});
+
+				/**
+				 * Submits scratchpad content and flips the card to reveal model answer and rubric.
+				 *
+				 * @param {Event} [e] - Optional triggering click or touch event.
+				 * @returns {void}
+				 */
+				const submitShortAnswer = (e) => {
+					if (e && e.cancelable) e.preventDefault();
 					const val = scratchEl.value.trim();
 					try {
 						sessionStorage.setItem(
@@ -421,8 +751,14 @@
 							val,
 						);
 					} catch (err) {}
+					scratchEl.blur();
+					submitBtn.textContent = "✓ Revealed — Tap to View";
 					flipToBack();
-				});
+				};
+
+				submitBtn.addEventListener("touchstart", submitShortAnswer, { passive: true });
+				submitBtn.addEventListener("mousedown", submitShortAnswer, { passive: true });
+				submitBtn.addEventListener("click", submitShortAnswer);
 			} else {
 				// --- 4. PROCESS OPTIONS ---
 				// MULTIPLE CHOICE: Standard single-choice options
@@ -461,7 +797,7 @@
 						flagStr === "1";
 
 					const btn = document.createElement("div");
-					btn.className = "option-block";
+					btn.className = "option-block mc-option-btn";
 
 					btn.innerHTML = `
 						<div class="option-content">

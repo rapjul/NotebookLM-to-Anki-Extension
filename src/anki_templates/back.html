@@ -180,20 +180,32 @@
 		 *
 		 * @param {boolean} isCorrect - Whether the user got the question right.
 		 * @param {string|null} [label=null] - Optional custom text label for the button.
+		 * @param {boolean} [isSkipped=false] - Whether the question was skipped.
 		 * @returns {void}
 		 */
-		function renderContinueButton(isCorrect, label = null) {
+		function renderContinueButton(
+			isCorrect,
+			label = null,
+			isSkipped = false,
+		) {
 			const actionContainer = document.getElementById("action-container");
 			if (!actionContainer) return;
 
 			actionContainer.innerHTML = "";
 			const continueBtn = document.createElement("button");
-			continueBtn.className = `continue-btn ${isCorrect ? "btn-correct" : "btn-wrong"}`;
+			const btnStateClass = isCorrect
+				? "btn-correct"
+				: isSkipped
+					? "btn-skipped"
+					: "btn-wrong";
+			continueBtn.className = `continue-btn ${btnStateClass}`;
 			continueBtn.textContent =
 				label ||
 				(isCorrect
 					? "Continue (Mark Correct)"
-					: "Continue (Mark Incorrect)");
+					: isSkipped
+						? "Continue (Mark Skipped)"
+						: "Continue (Mark Incorrect)");
 
 			continueBtn.addEventListener("click", () => gradeCard(isCorrect));
 			actionContainer.appendChild(continueBtn);
@@ -301,11 +313,20 @@
 				}
 			}
 
+			// Add question type scope class to the main wrapper
+			const wrapper = document.querySelector(".main-wrapper");
+			if (wrapper) {
+				wrapper.classList.add(
+					"qtype-" + questionType.toLowerCase().replace(/_/g, "-"),
+				);
+			}
+
 			const interactiveArea = document.getElementById(
 				"back-interactive-area",
 			);
 			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
 			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+			const iconSkip = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>`;
 
 			// --- MULTIPLE SELECT FEEDBACK ---
 			if (questionType === "MULTIPLE_SELECT") {
@@ -492,21 +513,38 @@
 					.filter((s) => s.length > 0);
 
 				const normTyped = normalizeBlank(typed);
+				const isSkipped = normTyped.length === 0;
 				const isCorrect =
-					normTyped.length > 0 && acceptedList.includes(normTyped);
+					!isSkipped && acceptedList.includes(normTyped);
+
+				const cardClass = isCorrect
+					? "card-correct"
+					: isSkipped
+						? "card-skipped"
+						: "card-wrong";
+				const headerIcon = isCorrect
+					? iconCheck
+					: isSkipped
+						? iconSkip
+						: iconClose;
+				const headerText = isCorrect
+					? "That's right!"
+					: isSkipped
+						? "Skipped"
+						: "Not quite";
 
 				const feedbackCard = `
-					<div class="feedback-card ${isCorrect ? "card-correct" : "card-wrong"}">
+					<div class="feedback-card ${cardClass}">
 						<div class="feedback-header">
-							${isCorrect ? iconCheck : iconClose}
-							<span>${isCorrect ? "That's right!" : "Not quite"}</span>
+							${headerIcon}
+							<span>${headerText}</span>
 						</div>
 						<div class="answer-row">
 							<span class="answer-label">Your answer:</span>
 							<span class="answer-value">${typed || "<i>(No response entered)</i>"}</span>
 						</div>
 						${
-							!isCorrect
+							!isCorrect && targetAnswer
 								? `
 						<div class="answer-row">
 							<span class="answer-label">Accepted answer:</span>
@@ -528,7 +566,11 @@
 					: "";
 
 				interactiveArea.innerHTML = feedbackCard + rationaleCard;
-				renderContinueButton(isCorrect);
+				renderContinueButton(
+					isCorrect,
+					isSkipped ? "Continue (Mark Skipped)" : null,
+					isSkipped,
+				);
 			} else if (questionType === "SHORT_ANSWER") {
 				// --- SHORT ANSWER FEEDBACK ---
 				let scratch = "";

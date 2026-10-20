@@ -226,7 +226,15 @@ body {
   gap: 15px;
 }
 
-.option-block {
+.option-block,
+.ms-option-btn,
+.mc-option-btn {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
   background-color: #2d2d2d;
   border: 1px solid #444746;
   border-radius: 12px;
@@ -240,7 +248,9 @@ body {
 }
 
 @media (hover: hover) {
-  .option-block:hover {
+  .option-block:hover,
+  .ms-option-btn:hover,
+  .mc-option-btn:hover {
     background-color: #383838;
   }
 }
@@ -257,6 +267,7 @@ body {
 }
 
 /* Multi-select Option Checkboxes */
+.ms-option-btn .option-content,
 .ms-option .option-content {
   align-items: center;
 }
@@ -275,11 +286,13 @@ body {
   transition: all 0.15s ease;
 }
 
+.ms-option-btn.is-selected .ms-checkbox,
 .ms-option.is-selected .ms-checkbox {
   background-color: #8ab4f8;
   border-color: #8ab4f8;
 }
 
+.ms-option-btn.is-selected .ms-checkbox::after,
 .ms-option.is-selected .ms-checkbox::after {
   content: "";
   width: 5px;
@@ -324,7 +337,10 @@ body {
 }
 
 /* Submit and Interaction Buttons */
-.submit-btn {
+.submit-btn,
+.fitb-submit-btn,
+.ms-submit-btn,
+.sa-submit-btn {
   background-color: #8ab4f8;
   color: #1e1e1e;
   font-size: 0.95rem;
@@ -337,17 +353,75 @@ body {
   display: block;
   width: 100%;
   box-sizing: border-box;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, opacity 0.15s ease;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 @media (hover: hover) {
-  .submit-btn:hover {
+  .submit-btn:not(.btn-disabled):hover,
+  .fitb-submit-btn:not(.btn-disabled):hover,
+  .ms-submit-btn:not(.btn-disabled):hover,
+  .sa-submit-btn:not(.btn-disabled):hover {
     background-color: #aecbfa;
   }
 }
 
-.submit-btn:active {
+.submit-btn:not(.btn-disabled):active,
+.fitb-submit-btn:not(.btn-disabled):active,
+.ms-submit-btn:not(.btn-disabled):active,
+.sa-submit-btn:not(.btn-disabled):active {
   transform: scale(0.99);
+}
+
+.submit-btn.btn-disabled,
+.ms-submit-btn.btn-disabled {
+  opacity: 0.5;
+  background-color: #3c4043;
+  color: #9aa0a6;
+  cursor: not-allowed;
+}
+
+/* Multi-Select Instruction Badge */
+.ms-instruction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #242c38;
+  border: 1px solid #3c5270;
+  color: #a8c7fa;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ms-badge-icon {
+  font-size: 0.95rem;
+}
+
+/* Warning Text when attempting to submit with 0 options */
+.ms-warning-text {
+  color: #f28b82;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-align: center;
+  margin-top: 8px;
+}
+
+/* Subtle Shake Animation for Invalid Submission Attempt */
+@keyframes btnShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.btn-shake {
+  animation: btnShake 0.4s ease-in-out;
 }
 
 /* Fill-in-the-Blank Styles */
@@ -416,6 +490,11 @@ body {
   border: 1px solid #81c995;
 }
 
+.card-skipped {
+  background-color: #2b261b;
+  border: 1px solid #f9ab00;
+}
+
 .card-wrong {
   background-color: #3b2323;
   border: 1px solid #f28b82;
@@ -431,6 +510,10 @@ body {
 
 .card-correct .feedback-header {
   color: #81c995;
+}
+
+.card-skipped .feedback-header {
+  color: #f9ab00;
 }
 
 .card-wrong .feedback-header {
@@ -836,6 +919,17 @@ mjx-container:not([display="true"]) {
   }
 }
 
+.continue-btn.btn-skipped {
+  background-color: #b07d00;
+  color: #ffffff;
+}
+
+@media (hover: hover) {
+  .continue-btn.btn-skipped:hover {
+    background-color: #f9ab00;
+  }
+}
+
 .continue-btn.btn-wrong {
   background-color: #c5221f;
 }
@@ -846,6 +940,11 @@ mjx-container:not([display="true"]) {
   }
 }
 
+.btn-skipped {
+  background-color: #f9ab00;
+  color: #1e1e1e;
+}
+
 /* 9. INTERACTION & POINTER EVENT CONTROLS */
 /* Front Side: Ignore background taps; allow interactive elements */
 .mode-centered {
@@ -853,10 +952,16 @@ mjx-container:not([display="true"]) {
 }
 
 .mode-centered .option-block,
+.mode-centered .mc-option-btn,
+.mode-centered .ms-option-btn,
+.mode-centered .ms-submit-btn,
+.mode-centered .fitb-form,
+.mode-centered .fitb-input,
+.mode-centered .fitb-submit-btn,
+.mode-centered .sa-scratchpad,
+.mode-centered .sa-submit-btn,
 .mode-centered .hint-btn,
 .mode-centered .submit-btn,
-.mode-centered .fitb-input,
-.mode-centered .sa-scratchpad,
 .mode-centered .continue-btn,
 .mode-centered .self-grade-buttons button {
   pointer-events: auto;
@@ -867,6 +972,14 @@ mjx-container:not([display="true"]) {
 }
 
 #layout-root .option-block,
+#layout-root .mc-option-btn,
+#layout-root .ms-option-btn,
+#layout-root .ms-submit-btn,
+#layout-root .fitb-form,
+#layout-root .fitb-input,
+#layout-root .fitb-submit-btn,
+#layout-root .sa-scratchpad,
+#layout-root .sa-submit-btn,
 #layout-root .continue-btn,
 #layout-root .self-grade-container button {
   pointer-events: auto;
@@ -878,6 +991,8 @@ mjx-container:not([display="true"]) {
 }
 
 .mode-split .option-block,
+.mode-split .mc-option-btn,
+.mode-split .ms-option-btn,
 .mode-split .continue-btn {
   pointer-events: auto;
 }
