@@ -470,6 +470,8 @@ test("templates: fill-in-the-blank skipped state feedback and continue button", 
 test("templates: mobile viewport height and keyboard scroll reset", () => {
 	const frontPath = path.join(srcDir, "anki_templates/front.html");
 	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
 	const cssPath = path.join(srcDir, "anki_templates/styling.css");
 	const cssContent = fs.readFileSync(cssPath, "utf-8");
 
@@ -478,16 +480,41 @@ test("templates: mobile viewport height and keyboard scroll reset", () => {
 		"styling.css .card should use min-height: 0 to avoid extra vertical scrollable space on mobile",
 	);
 	assert.ok(
-		frontHtml.includes('inputEl.addEventListener("focus", scheduleScrollReset)'),
-		"front.html should schedule scroll reset when fill-in-the-blank input gains focus",
+		cssContent.includes("scroll-margin-top: 20px;"),
+		"styling.css .question-text should define scroll-margin-top: 20px matching mobile quiz-column padding",
 	);
 	assert.ok(
-		frontHtml.includes('inputEl.addEventListener("blur", scheduleScrollReset)'),
-		"front.html should schedule scroll reset when fill-in-the-blank input loses focus",
+		!cssContent.includes(".main-wrapper.qtype-fill-in-the-blank .quiz-column"),
+		"styling.css should keep mobile padding uniform across all question types",
 	);
 	assert.ok(
-		frontHtml.includes("window.scrollTo(0, 1)"),
-		"front.html should perform a non-zero scroll nudge when scrollY is 0 so WKWebView resets visualViewport offset",
+		frontHtml.includes("function bindKeyboardScrollAlignment(fieldEl)"),
+		"front.html should define focus-gated bindKeyboardScrollAlignment helper",
+	);
+	assert.ok(
+		frontHtml.includes("bindKeyboardScrollAlignment(inputEl)"),
+		"front.html should bind keyboard scroll alignment to fill-in-the-blank input",
+	);
+	assert.ok(
+		frontHtml.includes("bindKeyboardScrollAlignment(scratchEl)"),
+		"front.html should bind keyboard scroll alignment to short-answer scratchpad",
+	);
+	assert.ok(
+		frontHtml.includes("topEl.scrollIntoView("),
+		"front.html should align the top question element into view using scrollIntoView",
+	);
+	assert.ok(
+		frontHtml.includes("if (document.activeElement !== fieldEl) return;"),
+		"front.html should guard scroll adjustments so they only run while the input is actively focused",
+	);
+	assert.ok(
+		frontHtml.includes("window.__notebooklmViewportHandler") &&
+			backHtml.includes("window.__notebooklmViewportHandler"),
+		"both front.html and back.html should clean up lingering visualViewport resize listeners across card flips",
+	);
+	assert.ok(
+		!frontHtml.includes('window.addEventListener("resize", scheduleScrollReset)'),
+		"front.html must not attach unconditional global window resize listeners that hijack manual scrolling",
 	);
 });
 

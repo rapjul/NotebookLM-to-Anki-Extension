@@ -85,6 +85,20 @@
 	(function () {
 		// Clean lifecycle reset for AnkiMobile's persistent WKWebView across cards
 		window.__notebooklmAllowHostFlip = false;
+		if (window.__notebooklmViewportHandler && window.visualViewport) {
+			window.visualViewport.removeEventListener(
+				"resize",
+				window.__notebooklmViewportHandler,
+			);
+			window.__notebooklmViewportHandler = null;
+		}
+		if (window.__notebooklmWindowResizeHandler) {
+			window.removeEventListener(
+				"resize",
+				window.__notebooklmWindowResizeHandler,
+			);
+			window.__notebooklmWindowResizeHandler = null;
+		}
 
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
 		// EXCEPT when interacting with inputs, buttons, options, or hint.
@@ -213,6 +227,131 @@
 			);
 		}
 
+		/**
+		 * Binds focus-gated mobile keyboard scroll alignment to a text input or textarea.
+		 *
+		 * Aligns the question prompt to the top of the visual viewport while the software
+		 * keyboard is open and tears down listeners on blur so normal page scrolling is
+		 * never interrupted.
+		 *
+		 * @param {HTMLElement} fieldEl - The input or textarea element to observe.
+		 * @returns {void}
+		 */
+		function bindKeyboardScrollAlignment(fieldEl) {
+			if (!fieldEl) return;
+			let pendingTimers = [];
+
+			/**
+			 * Clears any scheduled scroll alignment timeouts.
+			 *
+			 * @returns {void}
+			 */
+			const clearScheduledTimers = () => {
+				pendingTimers.forEach((id) => clearTimeout(id));
+				pendingTimers = [];
+			};
+
+			/**
+			 * Scrolls the question prompt to the top of the visible viewport while focused.
+			 *
+			 * @returns {void}
+			 */
+			const scrollToTop = () => {
+				if (document.activeElement !== fieldEl) return;
+
+				const topEl =
+					document.getElementById("q-text") ||
+					document.querySelector(".quiz-content-wrapper") ||
+					document.querySelector(".quiz-column");
+
+				if (topEl && typeof topEl.scrollIntoView === "function") {
+					topEl.scrollIntoView({
+						block: "start",
+						inline: "nearest",
+					});
+				}
+				if (window.scrollY > 0) {
+					window.scrollTo(0, 0);
+				}
+				if (
+					document.documentElement &&
+					document.documentElement.scrollTop > 0
+				) {
+					document.documentElement.scrollTop = 0;
+				}
+				if (document.body && document.body.scrollTop > 0) {
+					document.body.scrollTop = 0;
+				}
+			};
+
+			/**
+			 * Re-aligns the question prompt when the visual viewport resizes during active focus.
+			 *
+			 * @returns {void}
+			 */
+			const handleViewportResize = () => {
+				if (document.activeElement === fieldEl) {
+					scrollToTop();
+				}
+			};
+
+			/**
+			 * Schedules scroll alignment across the iOS keyboard animation window.
+			 *
+			 * @returns {void}
+			 */
+			const scheduleScrollReset = () => {
+				clearScheduledTimers();
+				pendingTimers = [50, 150, 300, 450, 600].map((ms) =>
+					setTimeout(scrollToTop, ms),
+				);
+			};
+
+			/**
+			 * Attaches the focus-scoped viewport listener and schedules top alignment.
+			 *
+			 * @returns {void}
+			 */
+			const handleFocus = () => {
+				if (window.visualViewport) {
+					if (window.__notebooklmViewportHandler) {
+						window.visualViewport.removeEventListener(
+							"resize",
+							window.__notebooklmViewportHandler,
+						);
+					}
+					window.__notebooklmViewportHandler = handleViewportResize;
+					window.visualViewport.addEventListener(
+						"resize",
+						handleViewportResize,
+					);
+				}
+				scheduleScrollReset();
+			};
+
+			/**
+			 * Clears scheduled timers and removes the viewport listener on blur.
+			 *
+			 * @returns {void}
+			 */
+			const handleBlur = () => {
+				clearScheduledTimers();
+				if (
+					window.visualViewport &&
+					window.__notebooklmViewportHandler
+				) {
+					window.visualViewport.removeEventListener(
+						"resize",
+						window.__notebooklmViewportHandler,
+					);
+					window.__notebooklmViewportHandler = null;
+				}
+			};
+
+			fieldEl.addEventListener("focus", handleFocus);
+			fieldEl.addEventListener("blur", handleBlur);
+		}
+
 		// Flip card to back helper
 		/**
 		 * Dispatches answer revelation command to flip the card to the back side
@@ -222,6 +361,13 @@
 		 */
 		function flipToBack() {
 			window.__notebooklmAllowHostFlip = true;
+			if (window.__notebooklmViewportHandler && window.visualViewport) {
+				window.visualViewport.removeEventListener(
+					"resize",
+					window.__notebooklmViewportHandler,
+				);
+				window.__notebooklmViewportHandler = null;
+			}
 			// 1. Anki Desktop
 			if (typeof pycmd !== "undefined") {
 				pycmd("ans");
@@ -724,64 +870,7 @@
 				submitBtn.addEventListener("touchstart", doSubmit, { passive: true });
 				submitBtn.addEventListener("mousedown", doSubmit, { passive: true });
 				submitBtn.addEventListener("click", doSubmit);
-				/**
-				 * Scrolls the card to the top of the page when the mobile keyboard opens or closes.
-				 *
-				 * In iOS WKWebView, when the card is shorter than the layout viewport (min-height: 0),
-				 * window.scrollY remains 0 while the native UIScrollView pans the visual viewport.
-				 *
-				 * WebKit ignores window.scrollTo(0, 0) as a no-op when scrollY is already 0 unless
-				 * a non-zero scroll position is committed across a frame boundary first.
-				 *
-				 * @returns {void}
-				 */
-				const resetScroll = () => {
-					if (window.scrollY > 0) {
-						window.scrollTo(0, 0);
-					} else if (document.body) {
-						document.body.style.minHeight =
-							window.innerHeight + 2 + "px";
-						window.scrollTo(0, 1);
-						if (typeof requestAnimationFrame === "function") {
-							requestAnimationFrame(() => {
-								window.scrollTo(0, 0);
-								document.body.style.minHeight = "";
-							});
-						} else {
-							window.scrollTo(0, 0);
-							document.body.style.minHeight = "";
-						}
-					} else {
-						window.scrollTo(0, 0);
-					}
-					if (document.documentElement) {
-						document.documentElement.scrollTop = 0;
-					}
-					if (document.body) {
-						document.body.scrollTop = 0;
-					}
-				};
-
-				/**
-				 * Re-applies the scroll reset across the iOS keyboard animation window
-				 * so native focus/keyboard scroll adjustments are overridden on both open and close.
-				 *
-				 * @returns {void}
-				 */
-				const scheduleScrollReset = () => {
-					[0, 100, 250, 400, 600, 900].forEach((ms) =>
-						setTimeout(resetScroll, ms),
-					);
-				};
-				inputEl.addEventListener("focus", scheduleScrollReset);
-				inputEl.addEventListener("blur", scheduleScrollReset);
-				window.addEventListener("resize", scheduleScrollReset);
-				if (window.visualViewport) {
-					window.visualViewport.addEventListener(
-						"resize",
-						scheduleScrollReset,
-					);
-				}
+				bindKeyboardScrollAlignment(inputEl);
 				// Auto-focus input on desktop without letting the browser scroll it into view
 				setTimeout(() => inputEl.focus({ preventScroll: true }), 150);
 			} else if (questionType === "SHORT_ANSWER") {
@@ -795,6 +884,8 @@
 
 				const scratchEl = document.getElementById("sa-scratchpad");
 				const submitBtn = document.getElementById("sa-submit-btn");
+
+				bindKeyboardScrollAlignment(scratchEl);
 
 				scratchEl.addEventListener("input", () => {
 					try {

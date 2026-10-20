@@ -58,6 +58,22 @@
 
 <script>
 	(function () {
+		// Defensive cleanup of any front-side keyboard viewport listeners in persistent WKWebView
+		if (window.__notebooklmViewportHandler && window.visualViewport) {
+			window.visualViewport.removeEventListener(
+				"resize",
+				window.__notebooklmViewportHandler,
+			);
+			window.__notebooklmViewportHandler = null;
+		}
+		if (window.__notebooklmWindowResizeHandler) {
+			window.removeEventListener(
+				"resize",
+				window.__notebooklmWindowResizeHandler,
+			);
+			window.__notebooklmWindowResizeHandler = null;
+		}
+
 		// Manage background taps: prevent option clicks from natively advancing on mobile,
 		// but allow background and continue button clicks to natively advance.
 		setTimeout(() => {
