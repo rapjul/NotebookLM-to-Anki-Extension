@@ -429,3 +429,27 @@ test("templates: fill-in-the-blank skipped state feedback and continue button", 
 		"back.html renderContinueButton should accept isSkipped flag",
 	);
 });
+
+test("templates: mobile viewport height and keyboard scroll reset", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const cssPath = path.join(srcDir, "anki_templates/styling.css");
+	const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+	assert.ok(
+		cssContent.includes("min-height: 0;"),
+		"styling.css .card should use min-height: 0 to avoid extra vertical scrollable space on mobile",
+	);
+	assert.ok(
+		frontHtml.includes('inputEl.addEventListener("focus", scheduleScrollReset)'),
+		"front.html should schedule scroll reset when fill-in-the-blank input gains focus",
+	);
+	assert.ok(
+		frontHtml.includes('inputEl.addEventListener("blur", scheduleScrollReset)'),
+		"front.html should schedule scroll reset when fill-in-the-blank input loses focus",
+	);
+	assert.ok(
+		frontHtml.includes("window.scrollTo(0, 1)"),
+		"front.html should perform a non-zero scroll nudge when scrollY is 0 so WKWebView resets visualViewport offset",
+	);
+});

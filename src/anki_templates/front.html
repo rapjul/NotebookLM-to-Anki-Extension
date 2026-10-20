@@ -84,6 +84,7 @@
 		// EXCEPT when interacting with inputs, buttons, options, or hint.
 		/**
 		 * Intercepts tap/click events to prevent premature flipping on mobile platforms.
+		 *
 		 * Allows interaction only for recognized interactive controls.
 		 *
 		 * @param {Event} e - The click or touchend event.
@@ -160,6 +161,7 @@
 		// --- 2. MATH RENDERER ---
 		/**
 		 * Triggers MathJax typesetting on the specified DOM element.
+		 *
 		 * Supports both MathJax v3 (typesetPromise) and MathJax v2 (Hub.Queue).
 		 *
 		 * @param {HTMLElement} element - Target container element to typeset.
@@ -513,6 +515,7 @@
 
 				/**
 				 * Submits multi-select selections and flips the card.
+				 *
 				 * Enforces that at least one option must be selected before advancing.
 				 *
 				 * @param {Event} [e] - Optional trigger event.
@@ -713,8 +716,66 @@
 				submitBtn.addEventListener("touchstart", doSubmit, { passive: true });
 				submitBtn.addEventListener("mousedown", doSubmit, { passive: true });
 				submitBtn.addEventListener("click", doSubmit);
-				// Auto-focus input on desktop
-				setTimeout(() => inputEl.focus(), 150);
+				/**
+				 * Scrolls the card to the top of the page when the mobile keyboard opens or closes.
+				 *
+				 * In iOS WKWebView, when the card is shorter than the layout viewport (min-height: 0),
+				 * window.scrollY remains 0 while the native UIScrollView pans the visual viewport.
+				 *
+				 * WebKit ignores window.scrollTo(0, 0) as a no-op when scrollY is already 0 unless
+				 * a non-zero scroll position is committed across a frame boundary first.
+				 *
+				 * @returns {void}
+				 */
+				const resetScroll = () => {
+					if (window.scrollY > 0) {
+						window.scrollTo(0, 0);
+					} else if (document.body) {
+						document.body.style.minHeight =
+							window.innerHeight + 2 + "px";
+						window.scrollTo(0, 1);
+						if (typeof requestAnimationFrame === "function") {
+							requestAnimationFrame(() => {
+								window.scrollTo(0, 0);
+								document.body.style.minHeight = "";
+							});
+						} else {
+							window.scrollTo(0, 0);
+							document.body.style.minHeight = "";
+						}
+					} else {
+						window.scrollTo(0, 0);
+					}
+					if (document.documentElement) {
+						document.documentElement.scrollTop = 0;
+					}
+					if (document.body) {
+						document.body.scrollTop = 0;
+					}
+				};
+
+				/**
+				 * Re-applies the scroll reset across the iOS keyboard animation window
+				 * so native focus/keyboard scroll adjustments are overridden on both open and close.
+				 *
+				 * @returns {void}
+				 */
+				const scheduleScrollReset = () => {
+					[0, 100, 250, 400, 600, 900].forEach((ms) =>
+						setTimeout(resetScroll, ms),
+					);
+				};
+				inputEl.addEventListener("focus", scheduleScrollReset);
+				inputEl.addEventListener("blur", scheduleScrollReset);
+				window.addEventListener("resize", scheduleScrollReset);
+				if (window.visualViewport) {
+					window.visualViewport.addEventListener(
+						"resize",
+						scheduleScrollReset,
+					);
+				}
+				// Auto-focus input on desktop without letting the browser scroll it into view
+				setTimeout(() => inputEl.focus({ preventScroll: true }), 150);
 			} else if (questionType === "SHORT_ANSWER") {
 				// SHORT ANSWER: Optional scratchpad + Reveal button
 				interactiveArea.innerHTML = `
