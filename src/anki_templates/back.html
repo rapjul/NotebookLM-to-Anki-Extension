@@ -19,7 +19,7 @@
 	</div>
 </div>
 
-<div id="back-data" style="display: none">
+<div id="back-data" class="is-hidden">
 	<div id="d-question">{{Question}}</div>
 	{{#Image}}
 	<div id="d-image">{{Image}}</div>
@@ -211,6 +211,133 @@
 			actionContainer.appendChild(continueBtn);
 		}
 
+		// SVG Evaluation Status Icons
+		// Material Design 'check' icon: https://fonts.google.com/icons?selected=Material+Symbols+Outlined:check
+		const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+		// Material Design 'close' icon: https://fonts.google.com/icons?selected=Material+Symbols+Outlined:close
+		const iconClose = `<svg class="status-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
+		// Material Design 'fast_forward' icon: https://fonts.google.com/icons?selected=Material+Symbols+Outlined:fast_forward
+		const iconSkip = `<svg class="status-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>`;
+
+		/**
+		 * Evaluates a multi-select option and returns its visual state class, icon, and feedback header label.
+		 *
+		 * @param {object} params - Evaluation parameters.
+		 * @param {boolean} params.isCorrect - Whether this option is factually correct.
+		 * @param {boolean} params.userSelected - Whether the user selected this option.
+		 * @param {boolean} params.hasInteraction - Whether user submitted choices before revealing.
+		 * @returns {{ stateClass: string, headerClass: string, icon: string, label: string }} Evaluation metadata.
+		 */
+		function evaluateMultiSelectOption({
+			isCorrect,
+			userSelected,
+			hasInteraction,
+		}) {
+			if (!hasInteraction) {
+				return isCorrect
+					? {
+							stateClass: "state-correct",
+							headerClass: "thats-right",
+							icon: iconCheck,
+							label: "Correct option",
+						}
+					: {
+							stateClass: "state-incorrect-unselected",
+							headerClass: "thats-incorrect-unselected",
+							icon: iconClose,
+							label: "Incorrect option",
+						};
+			}
+
+			if (isCorrect && userSelected) {
+				return {
+					stateClass: "state-correct",
+					headerClass: "thats-right",
+					icon: iconCheck,
+					label: "Correct selection (Your answer)",
+				};
+			}
+			if (isCorrect && !userSelected) {
+				return {
+					stateClass: "state-missed",
+					headerClass: "thats-missed",
+					icon: iconCheck,
+					label: "Missed correct option",
+				};
+			}
+			if (!isCorrect && userSelected) {
+				return {
+					stateClass: "state-wrong",
+					headerClass: "not-quite",
+					icon: iconClose,
+					label: "Incorrect selection (Your answer)",
+				};
+			}
+			return {
+				stateClass: "state-incorrect-unselected",
+				headerClass: "thats-incorrect-unselected",
+				icon: iconClose,
+				label: "Incorrect option",
+			};
+		}
+
+		/**
+		 * Evaluates a single-choice option and returns its visual state class, icon, and feedback label.
+		 *
+		 * @param {object} params - Evaluation parameters.
+		 * @param {boolean} params.isCorrect - Whether this option is factually correct.
+		 * @param {boolean} params.isSelected - Whether this option was selected by the user.
+		 * @param {boolean} params.userWasCorrect - Whether the user's selected choice overall was correct.
+		 * @returns {{ stateClass: string, headerClass: string, icon: string, label: string }} Evaluation metadata.
+		 */
+		function evaluateSingleChoiceOption({
+			isCorrect,
+			isSelected,
+			userWasCorrect,
+		}) {
+			let stateClass = "state-dimmed";
+			if (isCorrect) {
+				stateClass = "state-correct";
+			} else if (isSelected) {
+				stateClass = "state-wrong";
+			}
+
+			let headerClass = "";
+			let icon = "";
+			let label = "";
+
+			if (isCorrect) {
+				headerClass = "thats-right";
+				icon = iconCheck;
+				if (isSelected) {
+					label = "That's right! (Your answer)";
+				} else if (userWasCorrect) {
+					label = "This is also right!";
+				} else {
+					label = "Right answer";
+				}
+			} else if (isSelected) {
+				headerClass = "not-quite";
+				icon = iconClose;
+				label = "Not quite (Your answer)";
+			}
+
+			return { stateClass, headerClass, icon, label };
+		}
+
+		/**
+		 * Renders HTML markup for a feedback review header.
+		 *
+		 * @param {string} headerClass - CSS class for the header container.
+		 * @param {string} icon - SVG icon markup.
+		 * @param {string} label - Human-readable status label.
+		 * @returns {string} HTML markup string.
+		 */
+		function renderFeedbackHeader(headerClass, icon, label) {
+			if (!headerClass || !label) return "";
+			return `<div class="${headerClass}">${icon}<span>${label}</span></div>`;
+		}
+
 		try {
 			// Translate Question
 			const qRaw = document.getElementById("d-question").innerHTML;
@@ -221,9 +348,10 @@
 			const imgRaw = dImage ? dImage.innerHTML.trim() : "";
 			const mediaBox = document.getElementById("back-q-media");
 			if (mediaBox) {
-				if (imgRaw && imgRaw.length > 0) {
+				const hasImage = Boolean(imgRaw && imgRaw.length > 0);
+				mediaBox.classList.toggle("is-visible", hasImage);
+				if (hasImage) {
 					mediaBox.innerHTML = imgRaw;
-					mediaBox.style.display = "block";
 
 					const imgEl = mediaBox.querySelector("img");
 					if (imgEl && imgEl.alt && imgEl.alt.trim()) {
@@ -253,8 +381,8 @@
 						 */
 						const toggleDesc = (evt) => {
 							evt.stopPropagation();
-							const isShown = descBox.style.display === "block";
-							descBox.style.display = isShown ? "none" : "block";
+							const isShown = descBox.classList.contains("is-open");
+							descBox.classList.toggle("is-open", !isShown);
 							imgEl.setAttribute(
 								"aria-expanded",
 								String(!isShown),
@@ -269,8 +397,6 @@
 							}
 						});
 					}
-				} else {
-					mediaBox.style.display = "none";
 				}
 			}
 
@@ -324,9 +450,6 @@
 			const interactiveArea = document.getElementById(
 				"back-interactive-area",
 			);
-			const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
-			const iconClose = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>`;
-			const iconSkip = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>`;
 
 			// --- MULTIPLE SELECT FEEDBACK ---
 			if (questionType === "MULTIPLE_SELECT") {
@@ -427,39 +550,18 @@
 					const block = document.createElement("div");
 					block.className = "option-block";
 
-					let headerHtml = "";
-					let badgeHtml = "";
+					const evalResult = evaluateMultiSelectOption({
+						isCorrect,
+						userSelected,
+						hasInteraction,
+					});
 
-					if (hasInteraction) {
-						if (isCorrect && userSelected) {
-							block.classList.add("state-correct");
-							headerHtml = `<div class="thats-right" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Correct selection</span></div>`;
-							badgeHtml =
-								'<span class="your-answer-badge">· Your answer</span>';
-						} else if (isCorrect && !userSelected) {
-							block.classList.add("state-missed");
-							headerHtml = `<div class="thats-missed" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Missed correct option</span></div>`;
-							badgeHtml =
-								'<span class="missed-badge">· Missed</span>';
-						} else if (!isCorrect && userSelected) {
-							block.classList.add("state-wrong");
-							headerHtml = `<div class="not-quite" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect selection</span></div>`;
-							badgeHtml =
-								'<span class="your-answer-badge">· Your answer</span>';
-						} else {
-							block.classList.add("state-incorrect-unselected");
-							headerHtml = `<div class="thats-incorrect-unselected" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect option</span></div>`;
-						}
-					} else {
-						// Non-interactive preview or card browser view
-						if (isCorrect) {
-							block.classList.add("state-correct");
-							headerHtml = `<div class="thats-right" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconCheck}<span>Correct option</span></div>`;
-						} else {
-							block.classList.add("state-incorrect-unselected");
-							headerHtml = `<div class="thats-incorrect-unselected" style="display:flex;align-items:center;gap:10px;white-space:nowrap;">${iconClose}<span>Incorrect option</span></div>`;
-						}
-					}
+					block.classList.add(evalResult.stateClass);
+					const headerHtml = renderFeedbackHeader(
+						evalResult.headerClass,
+						evalResult.icon,
+						evalResult.label,
+					);
 
 					const rationaleContent = reason.trim()
 						? `<div class="rationale-text">${reason}</div>`
@@ -467,7 +569,7 @@
 					const feedbackHtml =
 						headerHtml || rationaleContent
 							? `
-						<div class="feedback-section" style="display:block;">
+						<div class="feedback-section is-revealed">
 							${headerHtml}
 							${rationaleContent}
 						</div>
@@ -478,7 +580,6 @@
 						<div class="option-content">
 							<span class="option-letter">${displayLetter}.</span>
 							<span>${text}</span>
-							${badgeHtml}
 						</div>
 						${feedbackHtml}
 					`;
@@ -652,7 +753,7 @@
 					`;
 				}
 				if (otherItems.length > 0) {
-					rubricContentHtml += `<div class="rubric-text" style="margin-top:8px;">${cleanMath(otherItems.join("<br>"))}</div>`;
+					rubricContentHtml += `<div class="rubric-text rubric-text-secondary">${cleanMath(otherItems.join("<br>"))}</div>`;
 				}
 
 				const rubricHtml =
@@ -801,29 +902,34 @@
 						flagStr === "true" ||
 						flagStr === "yes" ||
 						flagStr === "1";
+					const isSelected = selectedOpt === originalLetter;
 
 					const block = document.createElement("div");
 					block.className = "option-block";
 
+					const evalResult = evaluateSingleChoiceOption({
+						isCorrect,
+						isSelected,
+						userWasCorrect: selectedCorrect === "true",
+					});
+
+					block.classList.add(evalResult.stateClass);
+
 					let feedbackHtml = "";
-					if (reason.trim()) {
-						let headerHtml = "";
-						if (isCorrect) {
-							if (selectedOpt === originalLetter) {
-								headerHtml = `<div class="thats-right">${iconCheck} That's right!</div>`;
-							} else if (selectedCorrect === "true") {
-								headerHtml = `<div class="thats-right">${iconCheck} This is also right!</div>`;
-							} else {
-								headerHtml = `<div class="thats-right">${iconCheck} Right answer</div>`;
-							}
-						} else if (selectedOpt === originalLetter) {
-							headerHtml = `<div class="not-quite">${iconClose} Not quite</div>`;
-						}
+					if (reason.trim() || evalResult.label) {
+						const headerHtml = renderFeedbackHeader(
+							evalResult.headerClass,
+							evalResult.icon,
+							evalResult.label,
+						);
+						const rationaleContent = reason.trim()
+							? `<div class="rationale-text">${reason}</div>`
+							: "";
 
 						feedbackHtml = `
-							<div class="feedback-section" style="display:block;">
+							<div class="feedback-section is-revealed">
 								${headerHtml}
-								<div class="rationale-text">${reason}</div>
+								${rationaleContent}
 							</div>
 						`;
 					}
@@ -835,14 +941,6 @@
 						</div>
 						${feedbackHtml}
 					`;
-
-					if (isCorrect) {
-						block.classList.add("state-correct");
-					} else if (selectedOpt === originalLetter) {
-						block.classList.add("state-wrong");
-					} else {
-						block.classList.add("state-dimmed");
-					}
 
 					container.appendChild(block);
 				});
