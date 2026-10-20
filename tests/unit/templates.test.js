@@ -57,6 +57,14 @@ test("templates: front.html structure", () => {
 		!frontHtml.includes("ArchDiagram"),
 		"front.html should not contain legacy ArchDiagram placeholder to prevent model validation errors",
 	);
+	assert.ok(
+		frontHtml.includes('class="status-icon hint-icon"'),
+		"front.html should embed offline SVG hint icon",
+	);
+	assert.ok(
+		!frontHtml.includes("fonts.googleapis.com"),
+		"front.html should not load external fonts to guarantee offline functionality",
+	);
 });
 
 test("templates: back.html structure", () => {
@@ -98,22 +106,42 @@ test("templates: back.html structure", () => {
 		"back.html should not contain legacy ArchDiagram placeholder to prevent model validation errors",
 	);
 
-	// Verify multi-select adaptive feedback states
+	// Verify multi-select adaptive feedback states with consolidated user answer indicators
 	assert.ok(
-		backHtml.includes("Correct selection"),
-		"back.html should include 'Correct selection' feedback label",
+		backHtml.includes("Correct selection (Your answer)"),
+		"back.html should include 'Correct selection (Your answer)' feedback label",
 	);
 	assert.ok(
 		backHtml.includes("Missed correct option"),
 		"back.html should include 'Missed correct option' feedback label",
 	);
 	assert.ok(
-		backHtml.includes("Incorrect selection"),
-		"back.html should include 'Incorrect selection' feedback label",
+		backHtml.includes("Incorrect selection (Your answer)"),
+		"back.html should include 'Incorrect selection (Your answer)' feedback label",
 	);
 	assert.ok(
 		backHtml.includes("Incorrect option"),
 		"back.html should include 'Incorrect option' feedback label",
+	);
+
+	// Verify single-choice adaptive feedback states with user answer indicators
+	assert.ok(
+		backHtml.includes("That's right! (Your answer)"),
+		"back.html should include 'That's right! (Your answer)' feedback label",
+	);
+	assert.ok(
+		backHtml.includes("Not quite (Your answer)"),
+		"back.html should include 'Not quite (Your answer)' feedback label",
+	);
+
+	// Verify option content prompt line has full width without floating badges
+	assert.ok(
+		!backHtml.includes("${badgeHtml}"),
+		"back.html option content should omit floating badge placeholder to guarantee full-width prompt text",
+	);
+	assert.ok(
+		!backHtml.includes('class="your-answer-badge"'),
+		"back.html should not inject .your-answer-badge in option content row",
 	);
 
 	assert.ok(
@@ -156,6 +184,15 @@ test("templates: styling.css rules", () => {
 		".sa-misconceptions",
 		".diagram-alt-description",
 		".diagram-alt-label",
+		".visually-hidden",
+		".is-hidden",
+		".template-loading",
+		".hint-icon",
+		".is-visible",
+		".is-open",
+		".status-icon-correct",
+		".status-icon-wrong",
+		".status-icon-skipped",
 	];
 
 	for (const selector of requiredSelectors) {
@@ -452,4 +489,39 @@ test("templates: mobile viewport height and keyboard scroll reset", () => {
 		frontHtml.includes("window.scrollTo(0, 1)"),
 		"front.html should perform a non-zero scroll nudge when scrollY is 0 so WKWebView resets visualViewport offset",
 	);
+});
+
+test("templates: zero inline display styles and accessible standalone SVG icons", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+
+	// Verify absence of direct .style.display mutations
+	assert.ok(
+		!frontHtml.includes(".style.display"),
+		"front.html should not assign inline style.display; state toggles must use CSS classes",
+	);
+	assert.ok(
+		!backHtml.includes(".style.display"),
+		"back.html should not assign inline style.display; state toggles must use CSS classes",
+	);
+
+	// Verify all embedded SVGs contain XML namespace and accessibility attributes
+	const svgRegex = /<svg[^>]*>/g;
+	const frontSvgs = frontHtml.match(svgRegex) || [];
+	const backSvgs = backHtml.match(svgRegex) || [];
+	const allSvgs = [...frontSvgs, ...backSvgs];
+
+	assert.ok(allSvgs.length > 0, "templates should define embedded SVG icons");
+	for (const svgTag of allSvgs) {
+		assert.ok(
+			svgTag.includes('xmlns="http://www.w3.org/2000/svg"'),
+			`SVG tag ${svgTag} must define XML namespace`,
+		);
+		assert.ok(
+			svgTag.includes('aria-hidden="true"'),
+			`SVG decorative icon ${svgTag} must include aria-hidden="true"`,
+		);
+	}
 });
