@@ -525,3 +525,54 @@ test("templates: zero inline display styles and accessible standalone SVG icons"
 		);
 	}
 });
+
+test("templates: all double curly braces match valid Anki note fields or conditionals", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+
+	const validFields = new Set([
+		"Question",
+		"Hint",
+		"Image",
+		"Option1",
+		"Rationale1",
+		"Flag1",
+		"Option2",
+		"Rationale2",
+		"Flag2",
+		"Option3",
+		"Rationale3",
+		"Flag3",
+		"Option4",
+		"Rationale4",
+		"Flag4",
+		"QuestionType",
+		"TargetAnswer",
+		"AcceptableAnswers",
+		"Rubric",
+		"GeneralRationale",
+	]);
+
+	const mustachePattern = /\{\{([^{}]+)\}\}/g;
+	const checkTemplates = [
+		{ name: "front.html", content: frontHtml },
+		{ name: "back.html", content: backHtml },
+	];
+
+	for (const { name, content } of checkTemplates) {
+		const matches = Array.from(content.matchAll(mustachePattern));
+		assert.ok(matches.length > 0, `${name} should contain Anki field placeholders`);
+
+		for (const match of matches) {
+			const tagContent = match[1].trim();
+			// Handle conditional blocks such as {{#Image}} and {{/Image}}
+			const cleanName = tagContent.replace(/^[#/^]/, "");
+			assert.ok(
+				validFields.has(cleanName),
+				`${name} contains unexpected double-brace tag '{{${tagContent}}}'. Only registered Anki note fields are permitted to avoid Anki template compilation errors.`,
+			);
+		}
+	}
+});

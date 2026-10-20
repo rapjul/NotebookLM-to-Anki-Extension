@@ -220,13 +220,21 @@
 		const iconSkip = `<svg class="status-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/></svg>`;
 
 		/**
+		 * @typedef {Object} OptionEvaluation
+		 * @property {string} stateClass - Visual state CSS class for the option block.
+		 * @property {string} headerClass - CSS class for the feedback status header.
+		 * @property {string} icon - Inline SVG markup for the feedback status icon.
+		 * @property {string} label - Human-readable status label text.
+		 */
+
+		/**
 		 * Evaluates a multi-select option and returns its visual state class, icon, and feedback header label.
 		 *
 		 * @param {object} params - Evaluation parameters.
 		 * @param {boolean} params.isCorrect - Whether this option is factually correct.
 		 * @param {boolean} params.userSelected - Whether the user selected this option.
 		 * @param {boolean} params.hasInteraction - Whether user submitted choices before revealing.
-		 * @returns {{ stateClass: string, headerClass: string, icon: string, label: string }} Evaluation metadata.
+		 * @returns {OptionEvaluation} Evaluation metadata.
 		 */
 		function evaluateMultiSelectOption({
 			isCorrect,
@@ -288,7 +296,7 @@
 		 * @param {boolean} params.isCorrect - Whether this option is factually correct.
 		 * @param {boolean} params.isSelected - Whether this option was selected by the user.
 		 * @param {boolean} params.userWasCorrect - Whether the user's selected choice overall was correct.
-		 * @returns {{ stateClass: string, headerClass: string, icon: string, label: string }} Evaluation metadata.
+		 * @returns {OptionEvaluation} Evaluation metadata.
 		 */
 		function evaluateSingleChoiceOption({
 			isCorrect,
