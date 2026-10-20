@@ -1,6 +1,87 @@
 /* -------------------- NotebookLM Template: Start -------------------- */
 
-/* 1. GLOBAL RESET & FLICKER FIX */
+/* ==========================================================================
+   TABLE OF CONTENTS
+   1. Design Tokens & Global Reset
+   2. Layout Containers & Split Mode
+   3. Media & Inline Diagrams
+   4. Shared Controls, Utilities & Badges
+   5. Question Type Components
+      5.1 Multiple Choice (MC)
+      5.2 Multiple Select (MS)
+      5.3 Fill in the Blank (FITB)
+      5.4 Short Answer (SA)
+   6. Buttons & Interactive Triggers
+   7. States & Evaluation Feedback
+   8. MathJax & Code Rendering
+   9. Pointer Events & Tap Interception
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. DESIGN TOKENS & GLOBAL RESET
+   -------------------------------------------------------------------------- */
+:root,
+.card {
+  /* Surfaces & Backgrounds */
+  --bg-canvas: #1e1e1e;
+  --bg-surface: #2d2d2d;
+  --bg-surface-hover: #383838;
+  --bg-elevated: #252525;
+  --bg-panel-left: #1e1e1e;
+  --bg-panel-right: #121212;
+
+  /* Typography & Foreground */
+  --text-primary: #ffffff;
+  --text-secondary: #e3e3e3;
+  --text-muted: #9aa0a6;
+  --text-subtle: #bdc1c6;
+  --text-code: #e6b455;
+
+  /* Borders & Dividers */
+  --border-subtle: #3c4043;
+  --border-default: #444746;
+  --border-divider: #333333;
+
+  /* Brand & Accent (Blue) */
+  --color-accent: #8ab4f8;
+  --color-accent-subtle: #a8c7fa;
+  --color-accent-hover: #aecbfa;
+  --bg-accent-subtle: #242c38;
+  --border-accent-subtle: #3c5270;
+
+  /* Success & Correct (Green) */
+  --color-correct: #81c995;
+  --color-correct-btn: #0b8043;
+  --color-correct-btn-hover: #0f9d58;
+  --bg-correct: #1e3325;
+  --bg-correct-subtle: rgba(129, 201, 149, 0.15);
+  --border-correct-subtle: rgba(129, 201, 149, 0.4);
+
+  /* Warning & Skipped (Amber/Gold) */
+  --color-skipped: #f9ab00;
+  --color-skipped-btn: #b07d00;
+  --color-skipped-btn-hover: #f9ab00;
+  --bg-skipped: #2b261b;
+  --bg-misconceptions: #2c251e;
+
+  /* Error & Incorrect (Red) */
+  --color-wrong: #f28b82;
+  --color-wrong-btn: #c5221f;
+  --color-wrong-btn-hover: #d93025;
+  --bg-wrong: #3b2323;
+  --bg-wrong-subtle: rgba(242, 139, 130, 0.15);
+  --border-wrong-subtle: rgba(242, 139, 130, 0.4);
+
+  /* Geometry & Transitions */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 20px;
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+}
+
 html {
   overflow-y: auto;
   overflow-x: hidden;
@@ -10,34 +91,31 @@ body {
   margin: 0;
   padding: 0;
   width: 100%;
-  background-color: #1e1e1e;
-  font-family: "Roboto", "Segoe UI", "Open Sans", sans-serif;
-  color: #e3e3e3;
+  background-color: var(--bg-canvas);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Open Sans", sans-serif;
+  color: var(--text-secondary);
 }
 
 .card {
   font-size: 16px;
   line-height: 1.6;
   text-align: left;
-  background-color: #1e1e1e;
-  /* No 100vh min-height: on mobile, vh ignores the toolbar/keyboard and creates extra scrollable space. */
+  background-color: var(--bg-canvas);
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-/* 2. LAYOUT CONTAINERS */
+/* --------------------------------------------------------------------------
+   2. LAYOUT CONTAINERS & SPLIT MODE
+   -------------------------------------------------------------------------- */
 .main-wrapper {
   width: 100%;
   flex-grow: 1;
   box-sizing: border-box;
   display: flex;
-
-  /* padding-bottom: 100px; */
-  /* Prevents Anki's native grading buttons from appearing at the bottom of the screen. */
 }
 
-/* --- COLUMNS --- */
 .quiz-column {
   display: flex;
   flex-direction: column;
@@ -45,7 +123,7 @@ body {
   z-index: 1;
 }
 
-/* --- CENTERED MODE (Front Side Default) --- */
+/* --- Centered Mode (Front Side & Standard View) --- */
 .mode-centered {
   justify-content: center;
 }
@@ -57,14 +135,13 @@ body {
   padding: 60px 20px;
 }
 
-/* --- SPLIT MODE (Back Side Reveal) --- */
+/* --- Split Mode (Back Side Reveal) --- */
 .mode-split {
   justify-content: flex-start;
 }
 
 .mode-split .quiz-column {
   width: 50%;
-  /* Left Half */
   padding: 60px 40px;
   align-items: center;
 }
@@ -81,10 +158,9 @@ body {
   right: 0;
   width: 50%;
   height: 100vh;
-  background-color: #121212;
-  border-left: 1px solid #333;
+  background-color: var(--bg-panel-right);
+  border-left: 1px solid var(--border-divider);
   display: none;
-  /* Hidden by default */
   align-items: center;
   justify-content: center;
   padding: 20px;
@@ -92,7 +168,6 @@ body {
   z-index: 10;
 }
 
-/* Shown only in split mode */
 .mode-split .diagram-column {
   display: flex;
 }
@@ -101,22 +176,48 @@ body {
   max-width: 100%;
   max-height: 90vh;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   display: block;
 }
 
-/* 3. Elements */
-/* --- QUIZ ELEMENTS --- */
+/* Mobile Responsive Breakpoint */
+@media (max-width: 1000px) {
+  .main-wrapper {
+    flex-direction: column-reverse;
+  }
+
+  .mode-split .quiz-column,
+  .mode-centered .quiz-column {
+    width: 100%;
+    padding: 20px;
+  }
+
+  .mode-split .diagram-column {
+    position: relative;
+    width: 100%;
+    height: auto;
+    border-left: none;
+    border-bottom: 1px solid var(--border-divider);
+    display: flex;
+  }
+
+  .diagram-column img {
+    max-height: 40vh;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. MEDIA & INLINE DIAGRAMS
+   -------------------------------------------------------------------------- */
 .question-text {
   font-size: 1.35rem;
   font-weight: 500;
   margin-bottom: 25px;
-  color: #ffffff;
+  color: var(--text-primary);
   line-height: 1.5;
 }
 
-/* Inline Question Media (Diagram / Image) */
 .question-media {
   display: none;
   margin: 0 0 25px 0;
@@ -127,13 +228,13 @@ body {
   max-width: 100%;
   max-height: 420px;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   display: inline-block;
   cursor: pointer;
   transition:
-    filter 0.2s ease,
-    transform 0.15s ease;
+    filter var(--transition-base),
+    transform var(--transition-fast);
 }
 
 @media (hover: hover) {
@@ -147,13 +248,13 @@ body {
 }
 
 .question-media img:focus-visible {
-  outline: 2px solid #a8c7fa;
+  outline: 2px solid var(--color-accent-subtle);
   outline-offset: 2px;
 }
 
 .diagram-caption {
   font-size: 0.85rem;
-  color: #9aa0a6;
+  color: var(--text-muted);
   margin-top: 8px;
   font-style: italic;
   text-align: center;
@@ -165,10 +266,10 @@ body {
   max-width: 90%;
   font-size: 0.85rem;
   line-height: 1.4;
-  color: #bdc1c6;
-  background: #1e1f22;
-  border: 1px solid #3c4043;
-  border-radius: 6px;
+  color: var(--text-subtle);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
   text-align: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -176,20 +277,106 @@ body {
 
 .diagram-alt-label {
   font-weight: 600;
-  color: #a8c7fa;
+  color: var(--color-accent-subtle);
 }
 
+.diagram-placeholder {
+  padding: 12px 16px;
+  background-color: var(--bg-elevated);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: inline-block;
+  max-width: 90%;
+}
+
+.diagram-error-badge {
+  font-size: 0.85rem;
+  color: var(--color-wrong);
+  display: block;
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------------------
+   4. SHARED CONTROLS, UTILITIES & BADGES
+   -------------------------------------------------------------------------- */
+/* Display Utilities */
+.is-hidden {
+  display: none !important;
+}
+
+/* Visually Hidden Helper (Standard accessible pattern for hidden submit triggers) */
+.visually-hidden {
+  position: absolute !important;
+  left: -9999px !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Loading Placeholder */
+.template-loading {
+  color: var(--text-muted);
+  padding: 20px;
+  text-align: center;
+}
+
+/* SVG Status & Action Icons */
+.status-icon {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  fill: currentColor;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-icon.hint-icon {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+}
+
+.feedback-header .status-icon {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+}
+
+.status-icon.status-icon-correct {
+  fill: var(--color-correct);
+}
+
+.status-icon.status-icon-wrong {
+  fill: var(--color-wrong);
+}
+
+.status-icon.status-icon-skipped {
+  fill: var(--color-skipped);
+}
+
+/* Component Visibility Toggles */
+.question-media.is-visible,
+.hint-text-box.is-open,
+.diagram-alt-description.is-open {
+  display: block;
+}
+
+/* Hint Toggle & Content */
 .hint-container {
   margin-top: 30px;
 }
 
-/* HINT BUTTON */
 .hint-btn {
-  background-color: #2d2d2d;
-  border: 1px solid #444746;
-  border-radius: 20px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
   padding: 8px 16px;
-  color: #a8c7fa;
+  color: var(--color-accent-subtle);
   font-size: 0.9rem;
   font-weight: 500;
   display: inline-flex;
@@ -198,29 +385,77 @@ body {
   cursor: pointer;
   user-select: none;
   width: fit-content;
-  transition: background-color 0.2s;
+  transition: background-color var(--transition-base);
 }
 
 @media (hover: hover) {
   .hint-btn:hover {
-    background-color: #383838;
+    background-color: var(--bg-surface-hover);
   }
 }
 
 .hint-btn.hint-active {
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .hint-text-box {
   margin-top: 15px;
-  background-color: #252525;
-  border-left: 4px solid #a8c7fa;
+  background-color: var(--bg-elevated);
+  border-left: 4px solid var(--color-accent-subtle);
   padding: 15px;
-  color: #e3e3e3;
+  color: var(--text-secondary);
   display: none;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
+/* Score Pills */
+.score-pill-container {
+  margin-bottom: 20px;
+}
+
+.score-pill {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.pill-correct {
+  background-color: var(--bg-correct-subtle);
+  color: var(--color-correct);
+  border: 1px solid var(--border-correct-subtle);
+}
+
+.pill-wrong {
+  background-color: var(--bg-wrong-subtle);
+  color: var(--color-wrong);
+  border: 1px solid var(--border-wrong-subtle);
+}
+
+/* User Selection Badges */
+.your-answer-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-accent);
+  margin-left: 8px;
+}
+
+.missed-badge {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-correct);
+  margin-left: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   5. QUESTION TYPE COMPONENTS
+   -------------------------------------------------------------------------- */
+
+/* --- 5.1 Multiple Choice (MC) & Base Option Blocks --- */
 .options-list {
   display: flex;
   flex-direction: column;
@@ -236,9 +471,9 @@ body {
   text-align: left;
   width: 100%;
   box-sizing: border-box;
-  background-color: #2d2d2d;
-  border: 1px solid #444746;
-  border-radius: 12px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
   padding: 18px;
   display: flex;
   flex-direction: column;
@@ -252,7 +487,7 @@ body {
   .option-block:hover,
   .ms-option-btn:hover,
   .mc-option-btn:hover {
-    background-color: #383838;
+    background-color: var(--bg-surface-hover);
   }
 }
 
@@ -263,11 +498,11 @@ body {
 }
 
 .option-letter {
-  color: #a8c7fa;
+  color: var(--color-accent-subtle);
   font-weight: bold;
 }
 
-/* Multi-select Option Checkboxes */
+/* --- 5.2 Multiple Select (MS) --- */
 .ms-option-btn .option-content,
 .ms-option .option-content {
   align-items: center;
@@ -278,19 +513,19 @@ body {
   height: 18px;
   min-width: 18px;
   border: 2px solid #5f6368;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   margin-right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .ms-option-btn.is-selected .ms-checkbox,
 .ms-option.is-selected .ms-checkbox {
-  background-color: #8ab4f8;
-  border-color: #8ab4f8;
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .ms-option-btn.is-selected .ms-checkbox::after,
@@ -298,104 +533,23 @@ body {
   content: "";
   width: 5px;
   height: 9px;
-  border: solid #1e1e1e;
+  border: solid var(--bg-canvas);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   margin-bottom: 2px;
 }
 
-.your-answer-badge {
-  display: inline-block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #8ab4f8;
-  margin-left: 8px;
-}
-
-.score-pill-container {
-  margin-bottom: 20px;
-}
-
-.score-pill {
-  display: inline-block;
-  padding: 6px 14px;
-  border-radius: 16px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-.pill-correct {
-  background-color: rgba(129, 201, 149, 0.15);
-  color: #81c995;
-  border: 1px solid rgba(129, 201, 149, 0.4);
-}
-
-.pill-wrong {
-  background-color: rgba(242, 139, 130, 0.15);
-  color: #f28b82;
-  border: 1px solid rgba(242, 139, 130, 0.4);
-}
-
-/* Submit and Interaction Buttons */
-.submit-btn,
-.fitb-submit-btn,
-.ms-submit-btn,
-.sa-submit-btn {
-  background-color: #8ab4f8;
-  color: #1e1e1e;
-  font-size: 0.95rem;
-  font-weight: 600;
-  border: none;
-  border-radius: 20px;
-  padding: 12px 24px;
-  margin-top: 20px;
-  cursor: pointer;
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  transition: background-color 0.15s ease, opacity 0.15s ease;
-  text-align: center;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-@media (hover: hover) {
-  .submit-btn:not(.btn-disabled):hover,
-  .fitb-submit-btn:not(.btn-disabled):hover,
-  .ms-submit-btn:not(.btn-disabled):hover,
-  .sa-submit-btn:not(.btn-disabled):hover {
-    background-color: #aecbfa;
-  }
-}
-
-.submit-btn:not(.btn-disabled):active,
-.fitb-submit-btn:not(.btn-disabled):active,
-.ms-submit-btn:not(.btn-disabled):active,
-.sa-submit-btn:not(.btn-disabled):active {
-  transform: scale(0.99);
-}
-
-.submit-btn.btn-disabled,
-.ms-submit-btn.btn-disabled {
-  opacity: 0.5;
-  background-color: #3c4043;
-  color: #9aa0a6;
-  cursor: not-allowed;
-}
-
-/* Multi-Select Instruction Badge */
 .ms-instruction-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background-color: #242c38;
-  border: 1px solid #3c5270;
-  color: #a8c7fa;
+  background-color: var(--bg-accent-subtle);
+  border: 1px solid var(--border-accent-subtle);
+  color: var(--color-accent-subtle);
   font-size: 0.85rem;
   font-weight: 600;
   padding: 4px 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -405,16 +559,14 @@ body {
   font-size: 0.95rem;
 }
 
-/* Warning Text when attempting to submit with 0 options */
 .ms-warning-text {
-  color: #f28b82;
+  color: var(--color-wrong);
   font-size: 0.9rem;
   font-weight: 500;
   text-align: center;
   margin-top: 8px;
 }
 
-/* Subtle Shake Animation for Invalid Submission Attempt */
 @keyframes btnShake {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-6px); }
@@ -425,7 +577,7 @@ body {
   animation: btnShake 0.4s ease-in-out;
 }
 
-/* Fill-in-the-Blank Styles */
+/* --- 5.3 Fill in the Blank (FITB) --- */
 .fitb-container {
   display: flex;
   flex-direction: column;
@@ -435,51 +587,27 @@ body {
 .fitb-input {
   width: 100%;
   padding: 14px 16px;
-  background-color: #2d2d2d;
-  border: 1px solid #444746;
-  border-radius: 10px;
-  color: #ffffff;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
   font-size: 1.05rem;
   box-sizing: border-box;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color var(--transition-base);
 }
 
 .fitb-input:focus {
-  border-color: #8ab4f8;
+  border-color: var(--color-accent);
 }
 
-/* Short Answer Scratchpad Styles */
-.sa-container {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.fitb-feedback {
+  margin-top: 15px;
 }
 
-.sa-scratchpad {
-  width: 100%;
-  padding: 12px 16px;
-  background-color: #2d2d2d;
-  border: 1px solid #444746;
-  border-radius: 10px;
-  color: #ffffff;
-  font-size: 0.95rem;
-  font-family: inherit;
-  line-height: 1.5;
-  box-sizing: border-box;
-  resize: vertical;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.sa-scratchpad:focus {
-  border-color: #8ab4f8;
-}
-
-/* Feedback Cards for Text Questions */
 .feedback-card {
   padding: 18px;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   margin-bottom: 20px;
   display: flex;
   flex-direction: column;
@@ -487,18 +615,18 @@ body {
 }
 
 .card-correct {
-  background-color: #1e3325;
-  border: 1px solid #81c995;
+  background-color: var(--bg-correct);
+  border: 1px solid var(--color-correct);
 }
 
 .card-skipped {
-  background-color: #2b261b;
-  border: 1px solid #f9ab00;
+  background-color: var(--bg-skipped);
+  border: 1px solid var(--color-skipped);
 }
 
 .card-wrong {
-  background-color: #3b2323;
-  border: 1px solid #f28b82;
+  background-color: var(--bg-wrong);
+  border: 1px solid var(--color-wrong);
 }
 
 .feedback-header {
@@ -510,15 +638,15 @@ body {
 }
 
 .card-correct .feedback-header {
-  color: #81c995;
+  color: var(--color-correct);
 }
 
 .card-skipped .feedback-header {
-  color: #f9ab00;
+  color: var(--color-skipped);
 }
 
 .card-wrong .feedback-header {
-  color: #f28b82;
+  color: var(--color-wrong);
 }
 
 .answer-row {
@@ -530,18 +658,18 @@ body {
 
 .answer-label {
   font-weight: 600;
-  color: #9aa0a6;
+  color: var(--text-muted);
   min-width: 130px;
 }
 
 .answer-value {
-  color: #e3e3e3;
+  color: var(--text-secondary);
 }
 
 .general-rationale-box {
-  background-color: #252525;
-  border: 1px solid #3c4043;
-  border-radius: 10px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   padding: 16px;
   margin-bottom: 20px;
   color: #cccccc;
@@ -553,15 +681,42 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #a8c7fa;
+  color: var(--color-accent-subtle);
   margin-bottom: 8px;
+}
+
+/* --- 5.4 Short Answer (SA) --- */
+.sa-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sa-scratchpad {
+  width: 100%;
+  padding: 12px 16px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.5;
+  box-sizing: border-box;
+  resize: vertical;
+  outline: none;
+  transition: border-color var(--transition-base);
+}
+
+.sa-scratchpad:focus {
+  border-color: var(--color-accent);
 }
 
 .sa-user-scratch {
   background-color: #262626;
   border-left: 4px solid #5f6368;
   padding: 14px 16px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   margin-bottom: 16px;
 }
 
@@ -570,39 +725,39 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #9aa0a6;
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
 .sa-scratch-text {
-  color: #e3e3e3;
+  color: var(--text-secondary);
   line-height: 1.5;
 }
 
 .sa-model-answer {
-  background-color: #232b38;
-  border-left: 4px solid #8ab4f8;
+  background-color: var(--bg-accent-subtle);
+  border-left: 4px solid var(--color-accent);
   padding: 16px;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   margin-bottom: 16px;
   line-height: 1.6;
 }
 
 .sa-model-text {
-  color: #ffffff;
+  color: var(--text-primary);
 }
 
 .sa-rubric {
-  background-color: #252525;
-  border: 1px solid #3c4043;
-  border-radius: 10px;
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   padding: 16px;
   margin-bottom: 20px;
   line-height: 1.6;
 }
 
 .sa-rubric-content {
-  color: #e3e3e3;
+  color: var(--text-secondary);
   font-size: 0.95rem;
 }
 
@@ -621,8 +776,8 @@ body {
   padding: 8px 12px;
   border-radius: 6px;
   background-color: rgba(255, 255, 255, 0.03);
-  border: 1px solid #3c4043;
-  transition: all 0.15s ease;
+  border: 1px solid var(--border-subtle);
+  transition: all var(--transition-fast);
   user-select: none;
 }
 
@@ -632,16 +787,16 @@ body {
 }
 
 .rubric-item.rubric-checked {
-  background-color: rgba(129, 201, 149, 0.1);
-  border-color: #81c995;
+  background-color: var(--bg-correct-subtle);
+  border-color: var(--color-correct);
 }
 
 .rubric-checkbox {
   appearance: none;
   width: 18px;
   height: 18px;
-  border: 2px solid #9aa0a6;
-  border-radius: 4px;
+  border: 2px solid var(--text-muted);
+  border-radius: var(--radius-sm);
   outline: none;
   cursor: pointer;
   flex-shrink: 0;
@@ -649,13 +804,13 @@ body {
   position: relative;
   background: transparent;
   transition:
-    border-color 0.15s,
-    background-color 0.15s;
+    border-color var(--transition-fast),
+    background-color var(--transition-fast);
 }
 
 .rubric-checkbox:checked {
-  background-color: #81c995;
-  border-color: #81c995;
+  background-color: var(--color-correct);
+  border-color: var(--color-correct);
 }
 
 .rubric-checkbox:checked::after {
@@ -665,29 +820,33 @@ body {
   top: 1px;
   width: 4px;
   height: 9px;
-  border: solid #121212;
+  border: solid var(--bg-panel-right);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
 .rubric-text {
-  color: #e3e3e3;
+  color: var(--text-secondary);
   line-height: 1.5;
   font-size: 0.95rem;
 }
 
+.rubric-text-secondary {
+  margin-top: 8px;
+}
+
 .sa-misconceptions {
-  background-color: #2c251e;
-  border: 1px solid #f9ab00;
-  border-left: 4px solid #f9ab00;
-  border-radius: 0 8px 8px 0;
+  background-color: var(--bg-misconceptions);
+  border: 1px solid var(--color-skipped);
+  border-left: 4px solid var(--color-skipped);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   padding: 14px 16px;
   margin-bottom: 20px;
   line-height: 1.6;
 }
 
 .sa-misconceptions-heading {
-  color: #f9ab00;
+  color: var(--color-skipped);
   font-size: 0.85rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -703,6 +862,134 @@ body {
   font-size: 0.95rem;
 }
 
+/* --------------------------------------------------------------------------
+   6. BUTTONS & INTERACTIVE TRIGGERS
+   -------------------------------------------------------------------------- */
+.submit-btn,
+.fitb-submit-btn,
+.ms-submit-btn,
+.sa-submit-btn {
+  background-color: var(--color-accent);
+  color: var(--bg-canvas);
+  font-size: 0.95rem;
+  font-weight: 600;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 12px 24px;
+  margin-top: 20px;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  transition:
+    background-color var(--transition-fast),
+    opacity var(--transition-fast);
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (hover: hover) {
+  .submit-btn:not(.btn-disabled):hover,
+  .fitb-submit-btn:not(.btn-disabled):hover,
+  .ms-submit-btn:not(.btn-disabled):hover,
+  .sa-submit-btn:not(.btn-disabled):hover {
+    background-color: var(--color-accent-hover);
+  }
+}
+
+.submit-btn:not(.btn-disabled):active,
+.fitb-submit-btn:not(.btn-disabled):active,
+.ms-submit-btn:not(.btn-disabled):active,
+.sa-submit-btn:not(.btn-disabled):active {
+  transform: scale(0.99);
+}
+
+.submit-btn.btn-disabled,
+.ms-submit-btn.btn-disabled {
+  opacity: 0.5;
+  background-color: var(--border-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Continue & Auto-Grading Buttons */
+.continue-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-xl);
+  font-size: 1.05rem;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+  color: var(--text-primary);
+  transition:
+    background-color var(--transition-base),
+    transform 0.1s;
+  margin-top: 20px;
+  box-sizing: border-box;
+}
+
+.continue-btn:active {
+  transform: scale(0.98);
+}
+
+.continue-btn.btn-correct {
+  background-color: var(--color-correct-btn);
+}
+
+@media (hover: hover) {
+  .continue-btn.btn-correct:hover {
+    background-color: var(--color-correct-btn-hover);
+  }
+}
+
+.continue-btn.btn-skipped {
+  background-color: var(--color-skipped-btn);
+  color: var(--text-primary);
+}
+
+@media (hover: hover) {
+  .continue-btn.btn-skipped:hover {
+    background-color: var(--color-skipped-btn-hover);
+  }
+}
+
+.continue-btn.btn-wrong {
+  background-color: var(--color-wrong-btn);
+}
+
+@media (hover: hover) {
+  .continue-btn.btn-wrong:hover {
+    background-color: var(--color-wrong-btn-hover);
+  }
+}
+
+.btn-skipped {
+  background-color: var(--color-skipped);
+  color: var(--bg-canvas);
+}
+
+/* Submit Button Semantic State Modifiers (Used in Front template evaluation) */
+.submit-btn.btn-correct {
+  background-color: var(--color-correct) !important;
+  color: var(--bg-canvas) !important;
+}
+
+.submit-btn.btn-skipped {
+  background-color: var(--color-skipped) !important;
+  color: var(--bg-canvas) !important;
+}
+
+.submit-btn.btn-wrong {
+  background-color: var(--color-wrong) !important;
+  color: var(--bg-canvas) !important;
+}
+
+/* Self-Grading Rubric Controls */
 .self-grade-container {
   margin-top: 25px;
   text-align: center;
@@ -710,7 +997,7 @@ body {
 
 .self-grade-title {
   font-size: 0.95rem;
-  color: #9aa0a6;
+  color: var(--text-muted);
   margin-bottom: 12px;
 }
 
@@ -723,29 +1010,36 @@ body {
   margin-top: 0;
 }
 
-/* 4. STATES & FEEDBACK */
-.state-correct {
-  border-color: #81c995 !important;
-  background-color: #1e3325 !important;
+/* --------------------------------------------------------------------------
+   7. STATES & EVALUATION FEEDBACK
+   -------------------------------------------------------------------------- */
+.state-correct,
+.option-block.state-correct {
+  border-color: var(--color-correct) !important;
+  background-color: var(--bg-correct) !important;
 }
 
-.state-wrong {
-  border-color: #f28b82 !important;
-  background-color: #3b2323 !important;
+.state-wrong,
+.option-block.state-wrong {
+  border-color: var(--color-wrong) !important;
+  background-color: var(--bg-wrong) !important;
 }
 
-.state-dimmed {
+.state-dimmed,
+.option-block.state-dimmed {
   opacity: 0.5;
 }
 
-.state-missed {
-  border-color: #81c995 !important;
+.state-missed,
+.option-block.state-missed {
+  border-color: var(--color-correct) !important;
   background-color: rgba(129, 201, 149, 0.08) !important;
   border-style: dashed !important;
 }
 
-.state-incorrect-unselected {
-  border-color: #3c4043 !important;
+.state-incorrect-unselected,
+.option-block.state-incorrect-unselected {
+  border-color: var(--border-subtle) !important;
   background-color: #242424 !important;
   opacity: 0.8;
 }
@@ -753,11 +1047,15 @@ body {
 .feedback-section {
   display: none;
   padding-top: 8px;
-  border-top: 1px solid #444;
+  border-top: 1px solid var(--border-default);
+}
+
+.feedback-section.is-revealed {
+  display: block;
 }
 
 .thats-right {
-  color: #81c995;
+  color: var(--color-correct);
   font-weight: bold;
   display: flex;
   align-items: center;
@@ -768,7 +1066,7 @@ body {
 }
 
 .thats-missed {
-  color: #81c995;
+  color: var(--color-correct);
   font-weight: bold;
   display: flex !important;
   align-items: center !important;
@@ -780,7 +1078,7 @@ body {
 }
 
 .thats-incorrect-unselected {
-  color: #9aa0a6;
+  color: var(--text-muted);
   font-weight: 600;
   display: flex !important;
   align-items: center !important;
@@ -791,16 +1089,8 @@ body {
   white-space: nowrap !important;
 }
 
-.missed-badge {
-  display: inline-block;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #81c995;
-  margin-left: 8px;
-}
-
 .not-quite {
-  color: #f28b82;
+  color: var(--color-wrong);
   font-weight: bold;
   display: flex !important;
   align-items: center !important;
@@ -817,33 +1107,9 @@ body {
   line-height: 1.6;
 }
 
-.diagram-placeholder {
-  padding: 12px 16px;
-  background-color: #252525;
-  border: 1px dashed #5f6368;
-  border-radius: 8px;
-  display: inline-block;
-  max-width: 90%;
-}
-
-.diagram-error-badge {
-  font-size: 0.85rem;
-  color: #f28b82;
-  display: block;
-  font-weight: 500;
-}
-
-/* 5. SVG STATUS ICONS */
-.status-icon {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  fill: currentColor;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-/* 6. MATH & CODE SNIPPET STYLING */
+/* --------------------------------------------------------------------------
+   8. MATHJAX & CODE RENDERING
+   -------------------------------------------------------------------------- */
 .math-nowrap,
 mjx-container:not([display="true"]) {
   display: inline-block !important;
@@ -851,103 +1117,19 @@ mjx-container:not([display="true"]) {
 }
 
 .latex-snippet {
-  background-color: #383838;
-  color: #e6b455;
+  background-color: var(--bg-surface-hover);
+  color: var(--text-code);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-family: "Consolas", "Monaco", monospace;
   font-size: 0.95em;
-  border: 1px solid #444;
+  border: 1px solid var(--border-default);
 }
 
-/* 7. MOBILE */
-@media (max-width: 1000px) {
-  .main-wrapper {
-    flex-direction: column-reverse;
-  }
-
-  .mode-split .quiz-column,
-  .mode-centered .quiz-column {
-    width: 100%;
-    padding: 20px;
-  }
-
-  .mode-split .diagram-column {
-    position: relative;
-    width: 100%;
-    height: auto;
-    border-left: none;
-    border-bottom: 1px solid #333;
-    display: flex;
-  }
-
-  .diagram-column img {
-    max-height: 40vh;
-  }
-}
-
-/* 8. CONTINUE/AUTO-GRADE BUTTONS */
-.continue-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  padding: 12px;
-  border-radius: 12px;
-  font-size: 1.05rem;
-  font-weight: bold;
-  cursor: pointer;
-  border: none;
-  color: #ffffff;
-  transition:
-    background-color 0.2s,
-    transform 0.1s;
-  margin-top: 20px;
-  box-sizing: border-box;
-}
-
-.continue-btn:active {
-  transform: scale(0.98);
-}
-
-.continue-btn.btn-correct {
-  background-color: #0b8043;
-}
-
-@media (hover: hover) {
-  .continue-btn.btn-correct:hover {
-    background-color: #0f9d58;
-  }
-}
-
-.continue-btn.btn-skipped {
-  background-color: #b07d00;
-  color: #ffffff;
-}
-
-@media (hover: hover) {
-  .continue-btn.btn-skipped:hover {
-    background-color: #f9ab00;
-  }
-}
-
-.continue-btn.btn-wrong {
-  background-color: #c5221f;
-}
-
-@media (hover: hover) {
-  .continue-btn.btn-wrong:hover {
-    background-color: #d93025;
-  }
-}
-
-.btn-skipped {
-  background-color: #f9ab00;
-  color: #1e1e1e;
-}
-
-/* 9. INTERACTION & POINTER EVENT CONTROLS */
-/* Front Side: Ignore background taps; allow interactive elements */
+/* --------------------------------------------------------------------------
+   9. POINTER EVENTS & TAP INTERCEPTION
+   -------------------------------------------------------------------------- */
+/* Front Side: Ignore background taps; allow interactive controls */
 .mode-centered {
   pointer-events: none;
 }
