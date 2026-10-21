@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""test_update_templates.py
+
+Unit test suite for the Anki card templates updater CLI script.
+Tests delimiter extraction, fallback heuristic migration for external code (such as AJT Japanese),
+idempotency, and backup creation.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from typing import Any, Dict
+
+# Import tested module from scripts directory
+import sys
+
+SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from update_card_templates import (  # noqa: E402
+    CANONICAL_CSS_END,
+    CANONICAL_CSS_START,
+    CANONICAL_HTML_END,
+    CANONICAL_HTML_START,
+    create_backup,
+    splice_css_stylesheet,
+    splice_html_template,
+    strip_css_markers,
+    strip_html_markers,
+)
+
+
+class TestUpdateCardTemplates(unittest.TestCase):
+    """Test suite for update_card_templates helper functions."""
+
+    def test_strip_html_markers(self) -> None:
+        """Verifies that outer HTML boundary comments are cleanly removed."""
+        raw_html = f"{CANONICAL_HTML_START}\n<div class=\"main\">Content</div>\n{CANONICAL_HTML_END}"
+        stripped = strip_html_markers(raw_html)
+        self.assertEqual(stripped, "<div class=\"main\">Content</div>")
+
+        # Also supports legacy format
+        legacy_html = "<!-- NOTEBOOKLM_TEMPLATE_START -->\n<span>Card</span>\n<!-- NOTEBOOKLM_TEMPLATE_END -->"
+        self.assertEqual(strip_html_markers(legacy_html), "<span>Card</span>")
+
+    def test_strip_css_markers(self) -> None:
+        """Verifies that outer CSS boundary comments are cleanly removed."""
+        raw_css = f"{CANONICAL_CSS_START}\n.card {{ color: red; }}\n{CANONICAL_CSS_END}"
+        stripped = strip_css_markers(raw_css)
+        self.assertEqual(stripped, ".card { color: red; }")
+
+        # Also supports legacy format
+        legacy_css = "/* NOTEBOOKLM_STYLING_START */\n.card { font: sans; }\n/* NOTEBOOKLM_STYLING_END */"
+        self.assertEqual(strip_css_markers(legacy_css), ".card { font: sans; }")
+
+    def test_splice_html_with_existing_markers(self) -> None:
+        """Verifies splicing when boundary markers are already present in live HTML."""
+        live_html = (
+            "<!-- Custom Header -->\n"
+            f"{CANONICAL_HTML_START}\n"
+            "<div class=\"old\">Old Content</div>\n"
+            f"{CANONICAL_HTML_END}\n"
+            "<script>/* AJT Japanese JS */</script>"
+        )
+        local_html = "<div class=\"new\">New Content</div>"
+
+        merged, prefix, suffix = splice_html_template(live_html, local_html)
+
+        self.assertIn("<!-- Custom Header -->", prefix)
+        self.assertIn("<script>/* AJT Japanese JS */</script>", suffix)
+        self.assertIn("<div class=\"new\">New Content</div>", merged)
+        self.assertNotIn("<div class=\"old\">Old Content</div>", merged)
+        self.assertTrue(merged.startswith("<!-- Custom Header -->"))
+        self.assertTrue(merged.endswith("<script>/* AJT Japanese JS */</script>"))
+
+    def test_splice_html_fallback_migration_heuristic(self) -> None:
+        """Verifies unmigrated live template splits addon code from AJT Japanese script correctly."""
+        live_unmigrated = (
+            "<div class=\"main-wrapper mode-centered\">\n"
+            "\t<div class=\"question\">What is X?</div>\n"
+            "</div>\n"
+            "<script>\n"
+            "\t(function () {\n"
+            "\t\tconsole.log('addon script');\n"
+            "\t})();\n"
+            "</script>\n\n\n\n"
+            "<script>\n"
+            "/* AJT Japanese JS 25.4.30.1 */\n"
+            "(function () { console.log('ajt'); })();\n"
+            "</script>"
+        )
+        local_html = (
+            "<div class=\"main-wrapper mode-centered\">\n"
+            "\t<div class=\"question\">Updated local template</div>\n"
+            "</div>\n"
+            "<script>\n"
+            "\t(function () {\n"
+            "\t\tconsole.log('updated addon script');\n"
+            "\t})();\n"
+            "</script>"
+        )
+
+        merged, prefix, suffix = splice_html_template(live_unmigrated, local_html)
+
+        self.assertEqual(prefix, "")
+        self.assertIn("/* AJT Japanese JS 25.4.30.1 */", suffix)
+        self.assertIn(CANONICAL_HTML_START, merged)
+        self.assertIn(CANONICAL_HTML_END, merged)
+        self.assertIn("Updated local template", merged)
+        self.assertIn("/* AJT Japanese JS 25.4.30.1 */", merged)
+        self.assertNotIn("What is X?", merged)
+
+    def test_splice_css_with_existing_markers(self) -> None:
+        """Verifies splicing when boundary markers are already present in live CSS."""
+        live_css = (
+            "@charset \"UTF-8\";\n"
+            "@import url(\"_ajt_japanese.css\");\n\n"
+            f"{CANONICAL_CSS_START}\n"
+            ".old-card { margin: 0; }\n"
+            f"{CANONICAL_CSS_END}"
+        )
+        local_css = ".new-card { margin: 10px; }"
+
+        merged, prefix, suffix = splice_css_stylesheet(live_css, local_css)
+
+        self.assertIn("@import url(\"_ajt_japanese.css\");", prefix)
+        self.assertIn(".new-card { margin: 10px; }", merged)
+        self.assertNotIn(".old-card { margin: 0; }", merged)
+        self.assertTrue(merged.startswith("@charset \"UTF-8\";"))
+
+    def test_splice_css_fallback_migration_heuristic(self) -> None:
+        """Verifies unmigrated live CSS preserves leading @charset and @import rules."""
+        live_unmigrated = (
+            "@charset \"UTF-8\";\n"
+            "@import url(\"_ajt_japanese_25.4.30.1.css\");\n\n\n"
+            "/* NotebookLM to Anki - Card Styling (v10.0 Adaptive Multi-Format) */\n"
+            ".card { font-family: sans-serif; }\n"
+        )
+        local_css = (
+            "/* NotebookLM to Anki - Card Styling (v10.0 Adaptive Multi-Format) */\n"
+            ".card { font-family: system-ui; }\n"
+        )
+
+        merged, prefix, suffix = splice_css_stylesheet(live_unmigrated, local_css)
+
+        self.assertIn("@import url(\"_ajt_japanese_25.4.30.1.css\");", prefix)
+        self.assertIn(CANONICAL_CSS_START, merged)
+        self.assertIn(CANONICAL_CSS_END, merged)
+        self.assertIn(".card { font-family: system-ui; }", merged)
+        self.assertNotIn(".card { font-family: sans-serif; }", merged)
+
+    def test_splicing_idempotency(self) -> None:
+        """Verifies that splicing an already-spliced template produces identical output."""
+        live_unmigrated = (
+            "<div class=\"q\">Question</div>\n"
+            "<script>\n(function () {})();\n</script>\n"
+            "<script>/* AJT */</script>"
+        )
+        local_html = "<div class=\"q\">Updated Question</div>\n<script>\n(function () {})();\n</script>"
+
+        merged_first, _, _ = splice_html_template(live_unmigrated, local_html)
+        merged_second, _, _ = splice_html_template(merged_first, local_html)
+
+        self.assertEqual(merged_first, merged_second)
+
+    def test_create_backup(self) -> None:
+        """Verifies backup directory creation, HTML/CSS dump, and metadata persistence."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            backup_root = Path(tmp_dir)
+            templates: Dict[str, Any] = {
+                "NotebookLM Quiz": {
+                    "Front": "<div>Front Live</div>",
+                    "Back": "<div>Back Live</div>",
+                }
+            }
+            styling: Dict[str, Any] = {"css": ".live { color: blue; }"}
+
+            saved_dir = create_backup(
+                backup_dir=backup_root,
+                model_name="NotebookLM Quiz",
+                templates=templates,
+                styling=styling,
+            )
+
+            self.assertTrue(saved_dir.is_dir())
+            front_file = saved_dir / "NotebookLM_Quiz_front.html"
+            back_file = saved_dir / "NotebookLM_Quiz_back.html"
+            css_file = saved_dir / "styling.css"
+            meta_file = saved_dir / "metadata.json"
+
+            self.assertTrue(front_file.is_file())
+            self.assertTrue(back_file.is_file())
+            self.assertTrue(css_file.is_file())
+            self.assertTrue(meta_file.is_file())
+
+            self.assertEqual(front_file.read_text(encoding="utf-8"), "<div>Front Live</div>")
+            self.assertEqual(back_file.read_text(encoding="utf-8"), "<div>Back Live</div>")
+            self.assertEqual(css_file.read_text(encoding="utf-8"), ".live { color: blue; }")
+
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            self.assertEqual(meta["model_name"], "NotebookLM Quiz")
+
+
+if __name__ == "__main__":
+    unittest.main()
