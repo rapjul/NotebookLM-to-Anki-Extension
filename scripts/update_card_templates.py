@@ -714,11 +714,11 @@ def action_pull(
     print("📥 Successfully pulled and synchronized templates from Anki to repository.")
 
 
-def parse_args() -> argparse.Namespace:
-    """Configures command-line argument parser for the template updater CLI.
+def create_parser() -> argparse.ArgumentParser:
+    """Creates the command-line argument parser for the template updater CLI.
 
     Returns:
-        Parsed arguments namespace.
+        Configured ArgumentParser instance.
     """
     parser = argparse.ArgumentParser(
         description="Synchronize NotebookLM card templates to Anki with external code preservation.",
@@ -728,7 +728,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "action",
         nargs="?",
-        default="push",
+        default=None,
         choices=["push", "diff", "status", "pull"],
         help="Action to perform: 'push' updates Anki, 'diff' shows unified diff, 'status' inspects Anki, 'pull' updates local repo files.",
     )
@@ -768,6 +768,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "-n",
         "--dry-run",
         action="store_true",
         help="Preview changes and diff without modifying Anki collection.",
@@ -785,7 +786,20 @@ def parse_args() -> argparse.Namespace:
         help="Disable interactive confirmation prompts.",
     )
 
-    return parser.parse_args()
+    return parser
+
+
+def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
+    """Configures command-line argument parser and parses options.
+
+    Args:
+        args: Optional list of argument strings (defaults to sys.argv[1:]).
+
+    Returns:
+        Parsed arguments namespace.
+    """
+    parser = create_parser()
+    return parser.parse_args(args)
 
 
 def main() -> int:
@@ -794,8 +808,14 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for failure).
     """
-    args = parse_args()
+    parser = create_parser()
+    args = parser.parse_args()
     repo_root = Path(__file__).resolve().parent.parent
+
+    # If no action was provided, print help text and exit cleanly
+    if args.action is None:
+        parser.print_help()
+        return 0
 
     # Check connection
     if not ensure_anki_connection(
@@ -840,7 +860,13 @@ def main() -> int:
             )
         return 0
     except Exception as exc:
-        print(f"❌ Error executing '{args.action}': {exc}", file=sys.stderr)
+        err_msg = str(exc)
+        if "Close the affected editor before this API write" in err_msg:
+            print(f"❌ Error executing '{args.action}': {exc}", file=sys.stderr)
+            print("⚠️  The Cards or Note Types editor window is currently open in Anki Desktop.", file=sys.stderr)
+            print("👉 Please close the 'Cards...' editor dialog in Anki and run the command again.", file=sys.stderr)
+        else:
+            print(f"❌ Error executing '{args.action}': {exc}", file=sys.stderr)
         return 1
 
 

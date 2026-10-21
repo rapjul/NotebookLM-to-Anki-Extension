@@ -26,6 +26,8 @@ from update_card_templates import (  # noqa: E402
     CANONICAL_HTML_END,
     CANONICAL_HTML_START,
     create_backup,
+    create_parser,
+    parse_args,
     splice_css_stylesheet,
     splice_html_template,
     strip_css_markers,
@@ -202,6 +204,27 @@ class TestUpdateCardTemplates(unittest.TestCase):
 
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
             self.assertEqual(meta["model_name"], "NotebookLM Quiz")
+
+    def test_parse_args_defaults_to_none_action(self) -> None:
+        """Verifies that running without an action argument defaults to None."""
+        args = parse_args([])
+        self.assertIsNone(args.action)
+
+    def test_parse_args_short_dry_run_flag(self) -> None:
+        """Verifies that the -n short flag sets dry_run to True."""
+        args = parse_args(["push", "-n"])
+        self.assertEqual(args.action, "push")
+        self.assertTrue(args.dry_run)
+
+    def test_create_parser_help_text(self) -> None:
+        """Verifies that the CLI parser help text documents all available actions."""
+        parser = create_parser()
+        help_text = parser.format_help()
+        self.assertIn("push", help_text)
+        self.assertIn("diff", help_text)
+        self.assertIn("status", help_text)
+        self.assertIn("pull", help_text)
+        self.assertIn("-n, --dry-run", help_text)
 
 
 if __name__ == "__main__":
