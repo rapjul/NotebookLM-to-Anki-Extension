@@ -1,25 +1,24 @@
 /* -------------------- NotebookLM Template: Start -------------------- */
-
 /* ==========================================================================
-   TABLE OF CONTENTS
-   1. Design Tokens & Global Reset
-   2. Layout Containers & Split Mode
-   3. Media & Inline Diagrams
-   4. Shared Controls, Utilities & Badges
-   5. Question Type Components
-      5.1 Multiple Choice (MC)
-      5.2 Multiple Select (MS)
-      5.3 Fill in the Blank (FITB)
-      5.4 Short Answer (SA)
-   6. Buttons & Interactive Triggers
-   7. States & Evaluation Feedback
-   8. MathJax & Code Rendering
-   9. Pointer Events & Tap Interception
-   ========================================================================== */
+  TABLE OF CONTENTS
+  1. Design Tokens & Global Reset
+  2. Layout Containers & Split Mode
+  3. Media & Inline Diagrams
+  4. Shared Controls, Utilities & Badges
+  5. Question Type Components
+    5.1 Multiple Choice (MC)
+    5.2 Multiple Select (MS)
+    5.3 Fill in the Blank (FITB)
+    5.4 Short Answer (SA)
+  6. Buttons & Interactive Triggers
+  7. States & Evaluation Feedback
+  8. MathJax & Code Rendering
+  9. Pointer Events & Tap Interception
+  ========================================================================== */
 
-/* --------------------------------------------------------------------------
-   1. DESIGN TOKENS & GLOBAL RESET
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    1. DESIGN TOKENS & GLOBAL RESET
+    -------------------------------------------------------------------------- */
 :root,
 .card {
   /* Surfaces & Backgrounds */
@@ -106,9 +105,9 @@ body {
   flex-direction: column;
 }
 
-/* --------------------------------------------------------------------------
-   2. LAYOUT CONTAINERS & SPLIT MODE
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    2. LAYOUT CONTAINERS & SPLIT MODE
+    -------------------------------------------------------------------------- */
 .main-wrapper {
   width: 100%;
   flex-grow: 1;
@@ -207,9 +206,9 @@ body {
   }
 }
 
-/* --------------------------------------------------------------------------
-   3. MEDIA & INLINE DIAGRAMS
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    3. MEDIA & INLINE DIAGRAMS
+    -------------------------------------------------------------------------- */
 .question-text {
   font-size: 1.35rem;
   font-weight: 500;
@@ -297,9 +296,9 @@ body {
   font-weight: 500;
 }
 
-/* --------------------------------------------------------------------------
-   4. SHARED CONTROLS, UTILITIES & BADGES
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    4. SHARED CONTROLS, UTILITIES & BADGES
+    -------------------------------------------------------------------------- */
 /* Display Utilities */
 .is-hidden {
   display: none !important;
@@ -452,9 +451,9 @@ body {
   margin-left: 8px;
 }
 
-/* --------------------------------------------------------------------------
-   5. QUESTION TYPE COMPONENTS
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    5. QUESTION TYPE COMPONENTS
+    -------------------------------------------------------------------------- */
 
 /* --- 5.1 Multiple Choice (MC) & Base Option Blocks --- */
 .options-list {
@@ -485,6 +484,7 @@ body {
 }
 
 @media (hover: hover) {
+
   .option-block:hover,
   .ms-option-btn:hover,
   .mc-option-btn:hover {
@@ -569,9 +569,21 @@ body {
 }
 
 @keyframes btnShake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
 }
 
 .btn-shake {
@@ -863,9 +875,9 @@ body {
   font-size: 0.95rem;
 }
 
-/* --------------------------------------------------------------------------
-   6. BUTTONS & INTERACTIVE TRIGGERS
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    6. BUTTONS & INTERACTIVE TRIGGERS
+    -------------------------------------------------------------------------- */
 .submit-btn,
 .fitb-submit-btn,
 .ms-submit-btn,
@@ -886,11 +898,12 @@ body {
     background-color var(--transition-fast),
     opacity var(--transition-fast);
   text-align: center;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
 }
 
 @media (hover: hover) {
+
   .submit-btn:not(.btn-disabled):hover,
   .fitb-submit-btn:not(.btn-disabled):hover,
   .ms-submit-btn:not(.btn-disabled):hover,
@@ -1011,9 +1024,9 @@ body {
   margin-top: 0;
 }
 
-/* --------------------------------------------------------------------------
-   7. STATES & EVALUATION FEEDBACK
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    7. STATES & EVALUATION FEEDBACK
+    -------------------------------------------------------------------------- */
 .state-correct,
 .option-block.state-correct {
   border-color: var(--color-correct) !important;
@@ -1108,9 +1121,9 @@ body {
   line-height: 1.6;
 }
 
-/* --------------------------------------------------------------------------
-   8. MATHJAX & CODE RENDERING
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    8. MATHJAX & CODE RENDERING
+    -------------------------------------------------------------------------- */
 .math-nowrap,
 mjx-container:not([display="true"]) {
   display: inline-block !important;
@@ -1127,9 +1140,9 @@ mjx-container:not([display="true"]) {
   border: 1px solid var(--border-default);
 }
 
-/* --------------------------------------------------------------------------
-   9. POINTER EVENTS & TAP INTERCEPTION
-   -------------------------------------------------------------------------- */
+/*  --------------------------------------------------------------------------
+    9. POINTER EVENTS & TAP INTERCEPTION
+    -------------------------------------------------------------------------- */
 /* Front Side: Ignore background taps; allow interactive controls */
 .mode-centered {
   pointer-events: none;
