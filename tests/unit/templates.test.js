@@ -206,6 +206,13 @@ test("templates: styling.css rules", () => {
 		cssContent.includes("align-items: center;"),
 		"styling.css .rubric-item should vertically center checkboxes and labels with align-items: center",
 	);
+
+	// Verify strict ceiling on !important usage (only .is-hidden utility is permitted)
+	const importantMatches = cssContent.match(/!important/g) || [];
+	assert.ok(
+		importantMatches.length <= 1,
+		`styling.css has ${importantMatches.length} '!important' declarations; expected at most 1`,
+	);
 });
 
 test("templates: manifest.json integrity", () => {

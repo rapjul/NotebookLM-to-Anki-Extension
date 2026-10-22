@@ -306,16 +306,15 @@ body {
 
 /* Visually Hidden Helper (Standard accessible pattern for hidden submit triggers) */
 .visually-hidden {
-  position: absolute !important;
-  left: -9999px !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Loading Placeholder */
@@ -347,15 +346,15 @@ body {
   min-width: 20px;
 }
 
-.status-icon.status-icon-correct {
+.status-icon-correct {
   fill: var(--color-correct);
 }
 
-.status-icon.status-icon-wrong {
+.status-icon-wrong {
   fill: var(--color-wrong);
 }
 
-.status-icon.status-icon-skipped {
+.status-icon-skipped {
   fill: var(--color-skipped);
 }
 
@@ -504,8 +503,7 @@ body {
 }
 
 /* --- 5.2 Multiple Select (MS) --- */
-.ms-option-btn .option-content,
-.ms-option .option-content {
+.ms-option-btn .option-content {
   align-items: center;
 }
 
@@ -523,14 +521,12 @@ body {
   transition: all var(--transition-fast);
 }
 
-.ms-option-btn.is-selected .ms-checkbox,
-.ms-option.is-selected .ms-checkbox {
+.ms-option-btn.is-selected .ms-checkbox {
   background-color: var(--color-accent);
   border-color: var(--color-accent);
 }
 
-.ms-option-btn.is-selected .ms-checkbox::after,
-.ms-option.is-selected .ms-checkbox::after {
+.ms-option-btn.is-selected .ms-checkbox::after {
   content: "";
   width: 5px;
   height: 9px;
@@ -878,10 +874,7 @@ body {
 /*  --------------------------------------------------------------------------
     6. BUTTONS & INTERACTIVE TRIGGERS
     -------------------------------------------------------------------------- */
-.submit-btn,
-.fitb-submit-btn,
-.ms-submit-btn,
-.sa-submit-btn {
+.submit-btn {
   background-color: var(--color-accent);
   color: var(--bg-canvas);
   font-size: 0.95rem;
@@ -904,18 +897,12 @@ body {
 
 @media (hover: hover) {
 
-  .submit-btn:not(.btn-disabled):hover,
-  .fitb-submit-btn:not(.btn-disabled):hover,
-  .ms-submit-btn:not(.btn-disabled):hover,
-  .sa-submit-btn:not(.btn-disabled):hover {
+  .submit-btn:not(.btn-disabled):hover {
     background-color: var(--color-accent-hover);
   }
 }
 
-.submit-btn:not(.btn-disabled):active,
-.fitb-submit-btn:not(.btn-disabled):active,
-.ms-submit-btn:not(.btn-disabled):active,
-.sa-submit-btn:not(.btn-disabled):active {
+.submit-btn:not(.btn-disabled):active {
   transform: scale(0.99);
 }
 
@@ -991,18 +978,36 @@ body {
 
 /* Submit Button Semantic State Modifiers (Used in Front template evaluation) */
 .submit-btn.btn-correct {
-  background-color: var(--color-correct) !important;
-  color: var(--bg-canvas) !important;
+  background-color: var(--color-correct);
+  color: var(--bg-canvas);
+}
+
+@media (hover: hover) {
+  .submit-btn.btn-correct:hover {
+    background-color: var(--color-correct-btn-hover);
+  }
 }
 
 .submit-btn.btn-skipped {
-  background-color: var(--color-skipped) !important;
-  color: var(--bg-canvas) !important;
+  background-color: var(--color-skipped);
+  color: var(--bg-canvas);
+}
+
+@media (hover: hover) {
+  .submit-btn.btn-skipped:hover {
+    background-color: var(--color-skipped-btn-hover);
+  }
 }
 
 .submit-btn.btn-wrong {
-  background-color: var(--color-wrong) !important;
-  color: var(--bg-canvas) !important;
+  background-color: var(--color-wrong);
+  color: var(--bg-canvas);
+}
+
+@media (hover: hover) {
+  .submit-btn.btn-wrong:hover {
+    background-color: var(--color-wrong-btn-hover);
+  }
 }
 
 /* Self-Grading Rubric Controls */
@@ -1029,34 +1034,29 @@ body {
 /*  --------------------------------------------------------------------------
     7. STATES & EVALUATION FEEDBACK
     -------------------------------------------------------------------------- */
-.state-correct,
 .option-block.state-correct {
-  border-color: var(--color-correct) !important;
-  background-color: var(--bg-correct) !important;
+  border-color: var(--color-correct);
+  background-color: var(--bg-correct);
 }
 
-.state-wrong,
 .option-block.state-wrong {
-  border-color: var(--color-wrong) !important;
-  background-color: var(--bg-wrong) !important;
+  border-color: var(--color-wrong);
+  background-color: var(--bg-wrong);
 }
 
-.state-dimmed,
 .option-block.state-dimmed {
   opacity: 0.5;
 }
 
-.state-missed,
 .option-block.state-missed {
-  border-color: var(--color-correct) !important;
-  background-color: rgba(129, 201, 149, 0.08) !important;
-  border-style: dashed !important;
+  border-color: var(--color-correct);
+  background-color: rgba(129, 201, 149, 0.08);
+  border-style: dashed;
 }
 
-.state-incorrect-unselected,
 .option-block.state-incorrect-unselected {
-  border-color: var(--border-subtle) !important;
-  background-color: #242424 !important;
+  border-color: var(--border-subtle);
+  background-color: #242424;
   opacity: 0.8;
 }
 
@@ -1075,46 +1075,47 @@ body {
   font-weight: bold;
   display: flex;
   align-items: center;
+  flex-direction: row;
   gap: 10px;
   font-size: 1.1rem;
   margin-bottom: 8px;
-  white-space: nowrap !important;
+  white-space: nowrap;
 }
 
 .thats-missed {
   color: var(--color-correct);
   font-weight: bold;
-  display: flex !important;
-  align-items: center !important;
-  flex-direction: row !important;
-  gap: 10px !important;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 10px;
   font-size: 1.05rem;
   margin-bottom: 8px;
-  white-space: nowrap !important;
+  white-space: nowrap;
 }
 
 .thats-incorrect-unselected {
   color: var(--text-muted);
   font-weight: 600;
-  display: flex !important;
-  align-items: center !important;
-  flex-direction: row !important;
-  gap: 10px !important;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 10px;
   font-size: 1rem;
   margin-bottom: 8px;
-  white-space: nowrap !important;
+  white-space: nowrap;
 }
 
 .not-quite {
   color: var(--color-wrong);
   font-weight: bold;
-  display: flex !important;
-  align-items: center !important;
-  flex-direction: row !important;
-  gap: 10px !important;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 10px;
   font-size: 1.1rem;
   margin-bottom: 8px;
-  white-space: nowrap !important;
+  white-space: nowrap;
 }
 
 .rationale-text {
@@ -1126,10 +1127,9 @@ body {
 /*  --------------------------------------------------------------------------
     8. MATHJAX & CODE RENDERING
     -------------------------------------------------------------------------- */
-.math-nowrap,
-mjx-container:not([display="true"]) {
-  display: inline-block !important;
-  white-space: nowrap !important;
+.math-nowrap {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .latex-snippet {
@@ -1151,14 +1151,10 @@ mjx-container:not([display="true"]) {
 }
 
 .mode-centered .option-block,
-.mode-centered .mc-option-btn,
 .mode-centered .ms-option-btn,
-.mode-centered .ms-submit-btn,
 .mode-centered .fitb-form,
 .mode-centered .fitb-input,
-.mode-centered .fitb-submit-btn,
 .mode-centered .sa-scratchpad,
-.mode-centered .sa-submit-btn,
 .mode-centered .hint-btn,
 .mode-centered .submit-btn,
 .mode-centered .continue-btn,
@@ -1173,33 +1169,8 @@ mjx-container:not([display="true"]) {
   pointer-events: auto;
 }
 
-#layout-root .option-block,
-#layout-root .mc-option-btn,
-#layout-root .ms-option-btn,
-#layout-root .ms-submit-btn,
-#layout-root .fitb-form,
-#layout-root .fitb-input,
-#layout-root .fitb-submit-btn,
-#layout-root .sa-scratchpad,
-#layout-root .sa-submit-btn,
-#layout-root .continue-btn,
-#layout-root .tappable,
-#layout-root #action-container,
-#layout-root .self-grade-container,
-#layout-root .self-grade-container button {
-  pointer-events: auto;
-}
-
 /* Back Side: Allow background taps to advance/grade the card */
 .mode-split {
-  pointer-events: auto;
-}
-
-.mode-split .option-block,
-.mode-split .mc-option-btn,
-.mode-split .ms-option-btn,
-.mode-split .continue-btn,
-.mode-split .tappable {
   pointer-events: auto;
 }
 
