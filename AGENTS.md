@@ -49,11 +49,20 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/formatter.test.js](./tests/unit/formatter.test.js): Unit tests for HTML entity decoding, title normalization, deck templates, and error message formatting.
 - [unit/transformer.test.js](./tests/unit/transformer.test.js): Unit tests for JSON extraction, multi-format card normalization, LaTeX preservation, and 20-field Anki payload mapping.
 - [unit/deduplication.test.js](./tests/unit/deduplication.test.js): Unit tests for question text normalization, duplicate note filtering, and skipped duplicate counts.
-- [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, CSS selectors, and extension manifest validity.
+- [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, CSS selectors, mobile tap shielding, and extension manifest validity.
+- [unit/test_update_templates.py](./tests/unit/test_update_templates.py): Python unit test suite verifying template boundary extraction, fallback heuristic migration, idempotency, backup snapshots, and editor conflict handling.
 - [unit/background.test.js](./tests/unit/background.test.js): Unit tests for background service worker message routing, AnkiConnect HTTP requests, model creation, dynamic schema migration, media downloading, and batch export flows.
 - [unit/popup.test.js](./tests/unit/popup.test.js): Unit tests for configuration popup UI initialization, settings persistence, debug toggle, and active tab script injection.
 - [unit/content.test.js](./tests/unit/content.test.js): Unit tests for content script data mining, iframe messaging, UI button injection, duplicate modal workflows, and error display.
 - [integration/anki-connect.test.js](./tests/integration/anki-connect.test.js): Contract integration tests with mocked network calls verifying AnkiConnect status checks, model creation, schema migration, media caching, and batch export flows (`merge`, `overwrite`, `increment`).
+
+### 4. CLI & Synchronization Scripts (located under `./scripts/`)
+
+- [update_card_templates.py](./scripts/update_card_templates.py): Standalone Python CLI tool for bidirectional synchronization of card templates (`Front`, `Back`, and `Styles`) to Anki via AnkiConnect. Preserves non-addon code (e.g. `AJT Japanese`), creates timestamped live backups, and provides interactive retry on editor conflicts.
+
+### 5. Local Workspace Agent Skills (located under `./.agents/skills/`)
+
+- [update-anki-templates](./.agents/skills/update-anki-templates/SKILL.md): Local agent skill runbook guiding AI agents through diffing, inspecting, and synchronizing card templates to Anki.
 
 ---
 
@@ -76,16 +85,20 @@ To avoid cluttering `content.js` with stringified HTML templates and inline styl
 - All UI styles are defined in [modal.css](./src/modal.css).
 - The script fetches the templates using `chrome.runtime.getURL()` and manages states via CSS classes (e.g. `.notebooklm-to-anki-btn-success`) instead of direct DOM manipulation.
 
-### 3. Auto-Flip and Auto-Grading Cards
+### 3. Auto-Flip and Multi-Platform Auto-Grading Cards
 
-Multiple-choice cards automatically evaluate user answers and advance:
+Multiple-choice and interactive cards evaluate user answers dynamically and streamline grading:
 
-1.  **Selection (Front):** Clicking an option registers the choice (selected text and correct/incorrect flag) into `sessionStorage` and immediately flips the card using Anki's programmatic commands (`pycmd("ans")`, `showAnswer()`, or keyboard dispatch fallback).
-2.  **Grading (Back):**
-    - The correct option is always highlighted green (`.state-correct`).
-    - If the user clicked a wrong option, it is highlighted red (`.state-wrong`), and the correct option shows a "Right answer" status header.
-    - All non-selected/neutral options are slightly faded (`.state-dimmed`) but remain readable.
-    - A dynamic **"Continue (Mark Correct)"** or **"Continue (Mark Incorrect)"** button is injected on the back to auto-submit grades (`ease3` for Good, `ease1` for Again) and advance instantly. Standard manual grading controls remain active.
+1.  **Selection (Front):** Clicking an option registers the choice into `sessionStorage` and flips the card using Anki's programmatic commands (`pycmd("ans")`, `showAnswer()`, or keyboard dispatch fallback). Mobile tap interception (`window.__notebooklmFrontTapHandler`) prevents premature flipping when tapping whitespace or interactive inputs.
+2.  **Grading & Review (Back):**
+    - A consolidated `.review-header` displays answer evaluation at the top of the card with status badges (`.badge-correct`, `.badge-wrong`).
+    - The correct option is highlighted green (`.state-correct`), while incorrect choices are highlighted red (`.state-wrong`). Non-selected options are slightly dimmed (`.state-dimmed`) but remain readable.
+    - **Platform-Adaptive Action Buttons:** The back side injects an actionable grading button with desktop keyboard hints (`"Good (Mark Correct) [Space / 3]"`, `"Again (Mark Incorrect) [1]"`, `"Again (Mark Skipped) [1]"`) or clean touch labels on mobile devices.
+    - **Multi-Platform Grading Bridges:** Dispatches grades across all major Anki environments:
+      - **Desktop:** `pycmd("ease3")` / `pycmd("ease1")`
+      - **AnkiDroid:** `ankiAnswerEase3()` / `ankiAnswerEase1()`, and `AnkiDroidJS` bridge object
+      - **AnkiMobile (iOS WKWebView):** Uses `.tappable` pass-through classes and `touch-action: manipulation` to eliminate touch delays without swallowing grading taps.
+    - Standard manual Anki grading buttons remain fully active as alternatives.
 
 ### 4. Multi-Format Question Types & 20-Field Adaptive Schema
 
@@ -132,6 +145,24 @@ Diagram and source images embedded in prompts via markdown syntax (`![alt](image
 - Covered topic metadata from `topics.covered` is sanitized into valid Anki tags (converting spaces to underscores, stripping punctuation).
 - Notes are assigned dual origin tags `notebooklm_export` and `google_notebook_export` alongside the sanitized topic tags for effortless filtering and deck organization.
 
+### 7. Card Template Synchronization & External Code Preservation
+
+Card templates can be synchronized directly to Anki using [`./scripts/update_card_templates.py`](./scripts/update_card_templates.py):
+
+- **Boundary Delimiter Comments:** Templates in [`./src/anki_templates/`](./src/anki_templates/) are wrapped in standard boundary comments:
+  - HTML: `<!-- -------------------- NotebookLM Template: Start -------------------- -->` and `<!-- -------------------- NotebookLM Template: End -------------------- -->`
+  - CSS: `/* -------------------- NotebookLM Template: Start -------------------- */` and `/* -------------------- NotebookLM Template: End -------------------- */`
+- **Non-Addon Code Preservation:** Third-party add-on code (such as `AJT Japanese` furigana/pitch accent `<script>` blocks or `@import` rules) residing outside the delimiters in Anki is automatically detected, preserved, and spliced alongside updated repository templates.
+- **Automated Live Backups:** Every `push` operation creates a timestamped raw backup of existing live templates in `./backups/templates/<model>_<timestamp>/`.
+- **CLI Commands:**
+  - `python3 ./scripts/update_card_templates.py` — Displays help text and usage options.
+  - `python3 ./scripts/update_card_templates.py diff` — Color-coded unified diff comparing live Anki templates to the repository.
+  - `python3 ./scripts/update_card_templates.py push -n` — Dry-run previewing proposed updates without modifying Anki.
+  - `python3 ./scripts/update_card_templates.py push` — Updates Front, Back, and Styles in Anki via AnkiConnect.
+  - `python3 ./scripts/update_card_templates.py status` — Reports delimiter presence and detected external code blocks.
+  - `python3 ./scripts/update_card_templates.py pull` — Syncs live card template edits from Anki back to repository files.
+- **The "Single Main Window" Rule:** AnkiConnect blocks template writes whenever any secondary window with a note editor pane is open (`editorConflict`). To prevent errors, **close all secondary windows (Browse, Add, Edit Current, Cards...) and leave only the single main Anki window open** (Decks list or Study screen). The CLI includes an interactive prompt allowing users to close the window and press `Enter` to retry immediately.
+
 ---
 
 ## 🛠️ Code Conventions & Guidelines
@@ -150,6 +181,10 @@ When implementing changes, future agents **must** adhere to the following rules:
     - Do not leave unused variables or parameter blocks in catch clauses.
     - Use modern JavaScript APIs (e.g., standard fetch, async/await patterns, optional chaining).
 5.  **Automated Testing & Privacy:**
-    - Run the test suite using `npm test`, `npm run test:watch`, or `npm run test:coverage`.
+    - Run the Node.js test suite using `npm test`, `npm run test:watch`, or `npm run test:coverage`.
+    - Run the Python CLI test suite using `python3 -m unittest discover -s ./tests/unit -p "test_update_templates.py"`.
     - Ensure all committed test fixtures are sanitized and generic (basic chemistry, astronomy, algebra, geometry, trigonometry, calculus, physics) with zero personal or identifying information.
     - Maintain pure business logic in [`./src/utils.js`](./src/utils.js) without test-only backdoor branches in production code.
+6.  **Card Template Syntax & Curly Braces Safety:**
+    - Never write raw double curly braces (`{{` or `}}`) in `<script>` tags, comments, or JSDoc blocks in `front.html` or `back.html` unless referencing a real Anki field or conditional replacement.
+    - Anki's template parser interprets any double curly braces as field placeholders, which causes template compilation failures if the referenced name is not an Anki note field.
