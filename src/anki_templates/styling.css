@@ -491,6 +491,13 @@ body {
   }
 }
 
+.option-block:focus-visible,
+.ms-option-btn:focus-visible,
+.mc-option-btn:focus-visible {
+  outline: 2px solid var(--color-accent-subtle);
+  outline-offset: 2px;
+}
+
 .option-content {
   display: flex;
   align-items: flex-start;
@@ -741,6 +748,8 @@ body {
 .sa-scratch-text {
   color: var(--text-secondary);
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .sa-model-answer {
@@ -1076,10 +1085,11 @@ body {
   display: flex;
   align-items: center;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 1.1rem;
   margin-bottom: 8px;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .thats-missed {
@@ -1088,10 +1098,11 @@ body {
   display: flex;
   align-items: center;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 1.05rem;
   margin-bottom: 8px;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .thats-incorrect-unselected {
@@ -1100,10 +1111,11 @@ body {
   display: flex;
   align-items: center;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 1rem;
   margin-bottom: 8px;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .not-quite {
@@ -1112,10 +1124,11 @@ body {
   display: flex;
   align-items: center;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 1.1rem;
   margin-bottom: 8px;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .rationale-text {

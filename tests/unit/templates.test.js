@@ -765,3 +765,171 @@ test("templates: back.html continue button multi-platform grading and mobile tap
 		"styling.css should ensure pointer-events: auto for continue buttons, tappables, and action containers",
 	);
 });
+
+test("templates: native textContent protection for untrusted user inputs", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+
+	// Verify absence of unescaped user input interpolation in innerHTML templates
+	assert.ok(
+		!frontHtml.includes('<span class="answer-value">${val'),
+		"front.html should not interpolate raw val directly into innerHTML string",
+	);
+	assert.ok(
+		!backHtml.includes('<span class="answer-value">${typed'),
+		"back.html should not interpolate raw typed directly into innerHTML string",
+	);
+	assert.ok(
+		!backHtml.includes('<div class="sa-scratch-text">${scratch}'),
+		"back.html should not interpolate raw scratch directly into innerHTML string",
+	);
+
+	// Verify native textContent assignment
+	assert.ok(
+		frontHtml.includes("userAnsEl.textContent = val;"),
+		"front.html should assign typed fill-in-the-blank answer via textContent",
+	);
+	assert.ok(
+		backHtml.includes("userAnsEl.textContent = typed;"),
+		"back.html should assign persisted fill-in-the-blank answer via textContent",
+	);
+	assert.ok(
+		backHtml.includes("scratchEl.textContent = scratch;"),
+		"back.html should assign drafted scratchpad answer via textContent",
+	);
+});
+
+test("templates: Unicode card identifier resilience and collision protection", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+
+	assert.ok(
+		frontHtml.includes("function getCardId(raw)"),
+		"front.html should define getCardId helper",
+	);
+	assert.ok(
+		backHtml.includes("function getCardId(raw)"),
+		"back.html should define getCardId helper",
+	);
+	assert.ok(
+		frontHtml.includes("/[^\\p{L}\\p{N}]/gu"),
+		"front.html getCardId should match Unicode alphanumeric characters for CJK and non-Latin prompts",
+	);
+	assert.ok(
+		backHtml.includes("/[^\\p{L}\\p{N}]/gu"),
+		"back.html getCardId should match Unicode alphanumeric characters for CJK and non-Latin prompts",
+	);
+	assert.ok(
+		frontHtml.includes('"card_" + Math.abs(hash)'),
+		"front.html getCardId should provide deterministic hash fallback for non-alphanumeric prompts",
+	);
+	assert.ok(
+		backHtml.includes('"card_" + Math.abs(hash)'),
+		"back.html getCardId should provide deterministic hash fallback for non-alphanumeric prompts",
+	);
+});
+
+test("templates: centralized registries, array type guards, and lifecycle teardown", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+
+	// Verify registries exist
+	assert.ok(
+		frontHtml.includes("STORAGE_KEYS = {") && backHtml.includes("STORAGE_KEYS = {"),
+		"both templates should define centralized STORAGE_KEYS registry",
+	);
+	assert.ok(
+		frontHtml.includes("TIMING = {") && backHtml.includes("TIMING = {"),
+		"both templates should define centralized TIMING registry",
+	);
+	assert.ok(
+		frontHtml.includes("QUESTION_TYPES = {") && backHtml.includes("QUESTION_TYPES = {"),
+		"both templates should define centralized QUESTION_TYPES registry",
+	);
+
+	// Verify in-memory fallback
+	assert.ok(
+		frontHtml.includes("window.__notebooklmMemoryStore") &&
+			backHtml.includes("window.__notebooklmMemoryStore"),
+		"both templates should provide in-memory storage fallback for private browsing",
+	);
+
+	// Verify array type guards on JSON.parse
+	assert.ok(
+		backHtml.includes("Array.isArray(parsed)"),
+		"back.html should verify parsed multi-select payload is an Array",
+	);
+	assert.ok(
+		backHtml.includes("Array.isArray(shuffleKeys)"),
+		"back.html should verify parsed shuffle keys payload is an Array",
+	);
+
+	// Verify fast-path cleanMath
+	assert.ok(
+		frontHtml.includes('!str.includes("$") && !str.includes("`")') &&
+			backHtml.includes('!str.includes("$") && !str.includes("`")'),
+		"both templates should include fast-path pre-check in cleanMath",
+	);
+
+	// Verify lifecycle cleanup
+	assert.ok(
+		frontHtml.includes("window.__notebooklmKeydownHandler") &&
+			backHtml.includes("window.__notebooklmKeydownHandler"),
+		"both templates should manage window.__notebooklmKeydownHandler lifecycle",
+	);
+	assert.ok(
+		frontHtml.includes("window.__notebooklmSaKeyDown") &&
+			backHtml.includes("window.__notebooklmSaKeyDown"),
+		"both templates should clean up window.__notebooklmSaKeyDown across card renders",
+	);
+});
+
+test("templates: accessibility attributes and mobile layout resilience", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const cssPath = path.join(srcDir, "anki_templates/styling.css");
+	const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+	// Verify accessibility attributes on interactive options
+	assert.ok(
+		frontHtml.includes('btn.setAttribute("role", "checkbox")'),
+		"front.html should set role='checkbox' on multi-select options",
+	);
+	assert.ok(
+		frontHtml.includes('btn.setAttribute("aria-checked"'),
+		"front.html should manage aria-checked attribute on multi-select options",
+	);
+	assert.ok(
+		frontHtml.includes('btn.setAttribute("role", "button")') &&
+			frontHtml.includes('btn.setAttribute("tabindex", "0")'),
+		"front.html should set role='button' and tabindex='0' on single-choice options",
+	);
+	assert.ok(
+		frontHtml.includes('btn.addEventListener("keydown"'),
+		"front.html should attach keydown listener for keyboard selection on single-choice options",
+	);
+
+	// Verify styling rules
+	assert.ok(
+		cssContent.includes(".sa-scratch-text {\n  color: var(--text-secondary);\n  line-height: 1.5;\n  white-space: pre-wrap;"),
+		"styling.css .sa-scratch-text should include white-space: pre-wrap to preserve drafted line breaks",
+	);
+	assert.ok(
+		!cssContent.includes(".thats-right {\n  color: var(--color-correct);\n  font-weight: bold;\n  display: flex;\n  align-items: center;\n  flex-direction: row;\n  gap: 10px;\n  font-size: 1.1rem;\n  margin-bottom: 8px;\n  white-space: nowrap;"),
+		"styling.css review header should not enforce white-space: nowrap to prevent mobile text clipping",
+	);
+	assert.ok(
+		cssContent.includes("flex-wrap: wrap;") && cssContent.includes("word-break: break-word;"),
+		"styling.css review headers should support flex-wrap and word-break on mobile",
+	);
+	assert.ok(
+		cssContent.includes(".option-block:focus-visible"),
+		"styling.css should provide focus-visible outlines for keyboard navigation",
+	);
+});
