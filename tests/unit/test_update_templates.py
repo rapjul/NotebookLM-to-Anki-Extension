@@ -27,6 +27,8 @@ from update_card_templates import (  # noqa: E402
     CANONICAL_HTML_START,
     create_backup,
     create_parser,
+    execute_with_editor_retry,
+    format_editor_conflict_message,
     parse_args,
     splice_css_stylesheet,
     splice_html_template,
@@ -225,6 +227,82 @@ class TestUpdateCardTemplates(unittest.TestCase):
         self.assertIn("status", help_text)
         self.assertIn("pull", help_text)
         self.assertIn("-n, --dry-run", help_text)
+
+    def test_format_editor_conflict_message(self) -> None:
+        """Verifies that the editor conflict message advises closing all windows except the main window."""
+        msg = format_editor_conflict_message()
+        self.assertIn("Browse window", msg)
+        self.assertIn("Add window", msg)
+        self.assertIn("Card Types", msg)
+        self.assertIn("Close all Anki windows except the single main window", msg)
+
+    def test_execute_with_editor_retry_success(self) -> None:
+        """Verifies that interactive retry prompts user and succeeds on second attempt."""
+        attempts = 0
+
+        def fake_operation() -> str:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("AnkiConnect error: Close the affected editor before this API write, even if its content is saved.")
+            return "success"
+
+        user_inputs = [""]  # User presses Enter
+        result = execute_with_editor_retry(
+            action_name="push",
+            operation_fn=fake_operation,
+            interactive=True,
+            input_fn=lambda prompt: user_inputs.pop(0),
+        )
+        self.assertEqual(result, "success")
+        self.assertEqual(attempts, 2)
+
+    def test_execute_with_editor_retry_user_cancelled(self) -> None:
+        """Verifies that user entering 'q' aborts the retry loop with RuntimeError."""
+        def fake_operation() -> str:
+            raise RuntimeError("AnkiConnect error: Close the affected editor before this API write, even if its content is saved.")
+
+        with self.assertRaises(RuntimeError):
+            execute_with_editor_retry(
+                action_name="push",
+                operation_fn=fake_operation,
+                interactive=True,
+                input_fn=lambda prompt: "q",
+            )
+
+    def test_execute_with_editor_retry_non_interactive(self) -> None:
+        """Verifies that non-interactive execution raises immediately without calling input_fn."""
+        input_called = False
+
+        def fake_input(prompt: str) -> str:
+            nonlocal input_called
+            input_called = True
+            return ""
+
+        def fake_operation() -> str:
+            raise RuntimeError("AnkiConnect error: Close the affected editor before this API write, even if its content is saved.")
+
+        with self.assertRaises(RuntimeError):
+            execute_with_editor_retry(
+                action_name="push",
+                operation_fn=fake_operation,
+                interactive=False,
+                input_fn=fake_input,
+            )
+        self.assertFalse(input_called)
+
+    def test_execute_with_editor_retry_other_error_not_caught(self) -> None:
+        """Verifies that non-editor errors are raised immediately without retry."""
+        def fake_operation() -> str:
+            raise RuntimeError("AnkiConnect error: Model not found")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            execute_with_editor_retry(
+                action_name="push",
+                operation_fn=fake_operation,
+                interactive=True,
+            )
+        self.assertIn("Model not found", str(ctx.exception))
 
 
 if __name__ == "__main__":

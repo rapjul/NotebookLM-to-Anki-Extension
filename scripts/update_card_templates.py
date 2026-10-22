@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Standard boundary comments used for deterministic template splicing
 HTML_START_PATTERN = re.compile(
@@ -573,6 +573,69 @@ def action_diff(
     return diff1 or diff2 or diff3
 
 
+def format_editor_conflict_message() -> str:
+    """Formats a detailed, actionable message explaining how to resolve Anki's editor conflict.
+
+    Returns:
+        Formatted multi-line advisory string.
+    """
+    return (
+        "❌ Cannot update templates: Anki has an active editor window open.\n\n"
+        "⚠️  Anki blocks template updates whenever any secondary window with an editor is open.\n"
+        "👉 Please close all secondary windows (leave only the main Anki window open):\n"
+        "   • Browse window (\"Browse\" card search)\n"
+        "   • Add window (\"Add\" new notes)\n"
+        "   • Edit Current window (card editor)\n"
+        "   • Cards... / Card Types dialog (template editor)\n\n"
+        "💡 Rule of thumb: Close all Anki windows except the single main window (Decks or Study screen)."
+    )
+
+
+def execute_with_editor_retry(
+    action_name: str,
+    operation_fn: Callable[[], Any],
+    interactive: bool = True,
+    input_fn: Callable[[str], str] = input,
+) -> Any:
+    """Executes an AnkiConnect operation, retrying interactively if an editor conflict occurs.
+
+    Args:
+        action_name: Name of the action being attempted (e.g. 'push').
+        operation_fn: Callable executing the AnkiConnect API calls.
+        interactive: If True and running in a TTY, prompts the user to retry after closing windows.
+        input_fn: Input function for prompting user (defaults to built-in input).
+
+    Returns:
+        The result of operation_fn().
+
+    Raises:
+        RuntimeError: If operation_fn fails for reasons other than editorConflict,
+            or if the user cancels or the session is non-interactive.
+    """
+    while True:
+        try:
+            return operation_fn()
+        except RuntimeError as exc:
+            err_msg = str(exc)
+            if "Close the affected editor before this API write" not in err_msg:
+                raise
+
+            print(f"\n{format_editor_conflict_message()}", file=sys.stderr)
+
+            if not interactive:
+                raise
+
+            try:
+                choice = input_fn("\nPress Enter once closed to retry (or 'q' to cancel): ").strip().lower()
+                if choice in ("q", "quit"):
+                    print("🛑 Operation cancelled by user.", file=sys.stderr)
+                    raise
+                print("🔄 Retrying update in Anki...")
+            except (KeyboardInterrupt, EOFError):
+                print("\n🛑 Operation cancelled.", file=sys.stderr)
+                raise
+
+
 def action_push(
     anki_url: str,
     model_name: str,
@@ -581,6 +644,7 @@ def action_push(
     backup_dir: Path,
     skip_backup: bool = False,
     dry_run: bool = False,
+    interactive: bool = True,
 ) -> None:
     """Synchronizes repository templates to Anki with automated backup and boundary preservation.
 
@@ -592,6 +656,7 @@ def action_push(
         backup_dir: Destination folder for backups.
         skip_backup: If True, skips backup creation.
         dry_run: If True, previews changes without executing updates in Anki.
+        interactive: If True, enables interactive retry when editor conflict occurs.
     """
     templates = query_anki("modelTemplates", {"modelName": model_name}, anki_url=anki_url)
     styling = query_anki("modelStyling", {"modelName": model_name}, anki_url=anki_url)
@@ -634,34 +699,41 @@ def action_push(
         saved_path = create_backup(backup_dir, model_name, templates, styling)
         print(f"📦 Created live backup at: {saved_path}")
 
-    # Dispatch updates to AnkiConnect
-    print(f"🚀 Updating card templates for '{model_name}'...")
-    query_anki(
-        "updateModelTemplates",
-        {
-            "model": {
-                "name": model_name,
-                "templates": {
-                    card_name: {
-                        "Front": spliced_front,
-                        "Back": spliced_back,
-                    }
-                },
-            }
-        },
-        anki_url=anki_url,
-    )
+    # Dispatch updates to AnkiConnect with retry handler
+    def dispatch_update() -> None:
+        print(f"🚀 Updating card templates for '{model_name}'...")
+        query_anki(
+            "updateModelTemplates",
+            {
+                "model": {
+                    "name": model_name,
+                    "templates": {
+                        card_name: {
+                            "Front": spliced_front,
+                            "Back": spliced_back,
+                        }
+                    },
+                }
+            },
+            anki_url=anki_url,
+        )
 
-    print("🚀 Updating stylesheet...")
-    query_anki(
-        "updateModelStyling",
-        {
-            "model": {
-                "name": model_name,
-                "css": spliced_css,
-            }
-        },
-        anki_url=anki_url,
+        print("🚀 Updating stylesheet...")
+        query_anki(
+            "updateModelStyling",
+            {
+                "model": {
+                    "name": model_name,
+                    "css": spliced_css,
+                }
+            },
+            anki_url=anki_url,
+        )
+
+    execute_with_editor_retry(
+        action_name="push",
+        operation_fn=dispatch_update,
+        interactive=interactive,
     )
 
     print("🎉 Successfully updated NotebookLM card templates and styles in Anki!")
@@ -826,6 +898,8 @@ def main() -> int:
         print("❌ Cannot proceed without active AnkiConnect connection.", file=sys.stderr)
         return 1
 
+    is_interactive = sys.stdin.isatty() and not args.no_prompt
+
     try:
         if args.action == "status":
             action_status(
@@ -850,6 +924,7 @@ def main() -> int:
                 backup_dir=args.backup_dir,
                 skip_backup=args.no_backup,
                 dry_run=args.dry_run,
+                interactive=is_interactive,
             )
         elif args.action == "pull":
             action_pull(
@@ -861,11 +936,7 @@ def main() -> int:
         return 0
     except Exception as exc:
         err_msg = str(exc)
-        if "Close the affected editor before this API write" in err_msg:
-            print(f"❌ Error executing '{args.action}': {exc}", file=sys.stderr)
-            print("⚠️  The Cards or Note Types editor window is currently open in Anki Desktop.", file=sys.stderr)
-            print("👉 Please close the 'Cards...' editor dialog in Anki and run the command again.", file=sys.stderr)
-        else:
+        if "Close the affected editor before this API write" not in err_msg:
             print(f"❌ Error executing '{args.action}': {exc}", file=sys.stderr)
         return 1
 
