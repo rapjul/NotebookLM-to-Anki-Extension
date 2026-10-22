@@ -88,6 +88,121 @@
 			);
 			window.__notebooklmWindowResizeHandler = null;
 		}
+		if (window.__notebooklmKeydownHandler) {
+			window.removeEventListener(
+				"keydown",
+				window.__notebooklmKeydownHandler,
+			);
+			window.__notebooklmKeydownHandler = null;
+		}
+		if (window.__notebooklmSaKeyDown) {
+			window.removeEventListener(
+				"keydown",
+				window.__notebooklmSaKeyDown,
+			);
+			window.__notebooklmSaKeyDown = null;
+		}
+
+		// --- CENTRALIZED CONSTANTS & STORAGE REGISTRIES ---
+		const STORAGE_KEYS = {
+			SHUFFLE: "notebooklm_shuffle_",
+			MS_SELECTION: "notebooklm_ms_sel_",
+			FITB_TYPED: "notebooklm_typed_",
+			SA_SCRATCH: "notebooklm_sa_scratch_",
+			MC_SELECTED: "notebooklm_sel_opt_",
+			MC_CORRECT: "notebooklm_sel_corr_",
+			KEYBOARD_DETECTED: "notebooklm_has_keyboard",
+		};
+
+		const TIMING = {
+			GHOST_CLICK_WINDOW_MS: 400,
+			MATHJAX_RENDER_DELAY_MS: 100,
+		};
+
+		const QUESTION_TYPES = {
+			MULTIPLE_CHOICE: "MULTIPLE_CHOICE",
+			MULTIPLE_SELECT: "MULTIPLE_SELECT",
+			FILL_IN_THE_BLANK: "FILL_IN_THE_BLANK",
+			SHORT_ANSWER: "SHORT_ANSWER",
+			KNOWN_TYPES: [
+				"MULTIPLE_CHOICE",
+				"MULTIPLE_SELECT",
+				"FILL_IN_THE_BLANK",
+				"SHORT_ANSWER",
+			],
+		};
+
+		const PLATFORM_COMMANDS = {
+			EASE_GOOD: "ease3",
+			EASE_AGAIN: "ease1",
+			GESTURE_GOOD: "midRight",
+			GESTURE_AGAIN: "midLeft",
+		};
+
+		// In-memory fallback dictionary for private browsing or restricted webview storage
+		window.__notebooklmMemoryStore = window.__notebooklmMemoryStore || {};
+
+		/**
+		 * Safely writes a key-value pair to sessionStorage with an in-memory fallback.
+		 *
+		 * @param {string} key - Storage key name.
+		 * @param {string} value - String value to store.
+		 * @returns {void}
+		 */
+		function setSessionItem(key, value) {
+			try {
+				sessionStorage.setItem(key, value);
+			} catch (err) {
+				window.__notebooklmMemoryStore[key] = value;
+			}
+		}
+
+		/**
+		 * Safely reads a key from sessionStorage with an in-memory fallback.
+		 *
+		 * @param {string} key - Storage key name.
+		 * @returns {string|null} Stored value or null if absent.
+		 */
+		function getSessionItem(key) {
+			try {
+				const val = sessionStorage.getItem(key);
+				if (val !== null) return val;
+			} catch (err) {}
+			return window.__notebooklmMemoryStore[key] ?? null;
+		}
+
+		/**
+		 * Safely removes a key from sessionStorage and in-memory store.
+		 *
+		 * @param {string} key - Storage key name.
+		 * @returns {void}
+		 */
+		function removeSessionItem(key) {
+			try {
+				sessionStorage.removeItem(key);
+			} catch (err) {}
+			delete window.__notebooklmMemoryStore[key];
+		}
+
+		/**
+		 * Generates a safe, collision-resistant identifier for the current card.
+		 * Preserves Unicode word characters across CJK, Cyrillic, and Arabic alphabets,
+		 * with a deterministic numeric hash fallback for non-alphanumeric prompts.
+		 *
+		 * @param {string} raw - Raw question text.
+		 * @returns {string} Sanitized alphanumeric card identifier.
+		 */
+		function getCardId(raw) {
+			const clean = (raw || "").substring(0, 50).replace(/[^\p{L}\p{N}]/gu, "");
+			if (clean) return clean;
+			let hash = 0;
+			const str = raw || "";
+			for (let i = 0; i < str.length; i++) {
+				hash = ((hash << 5) - hash) + str.charCodeAt(i);
+				hash |= 0;
+			}
+			return "card_" + Math.abs(hash);
+		}
 
 		// Manage background taps: prevent option clicks from natively advancing on mobile,
 		// but allow background and continue button clicks to natively advance.
@@ -140,6 +255,11 @@
 		 */
 		function cleanMath(str) {
 			if (!str) return "";
+			if (typeof str !== "string") str = String(str);
+			// Performance optimization: skip 6 regex operations if string contains no math delimiters or backticks
+			if (!str.includes("$") && !str.includes("`")) {
+				return str;
+			}
 			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
 			s = s.replace(/\$((?:[^$]|\\$)+?)\$/g, "\\($1\\)");
 			s = s.replace(
@@ -261,11 +381,10 @@
 		 */
 		const recordBackKeyboardUsage = (e) => {
 			if (e.key) {
-				try {
-					sessionStorage.setItem("notebooklm_has_keyboard", "true");
-				} catch (err) {}
+				setSessionItem(STORAGE_KEYS.KEYBOARD_DETECTED, "true");
 			}
 		};
+		window.__notebooklmKeydownHandler = recordBackKeyboardUsage;
 		window.addEventListener("keydown", recordBackKeyboardUsage);
 
 		/**
@@ -287,7 +406,8 @@
 			let sessionKeyDetected = false;
 			try {
 				sessionKeyDetected =
-					sessionStorage.getItem("notebooklm_has_keyboard") === "true";
+					sessionStorage.getItem("notebooklm_has_keyboard") === "true" ||
+					getSessionItem(STORAGE_KEYS.KEYBOARD_DETECTED) === "true";
 			} catch (e) {}
 			return Boolean(hasFinePointer || sessionKeyDetected);
 		}
@@ -467,7 +587,7 @@
 			 */
 			const handleAction = (e) => {
 				const now = Date.now();
-				if (now - lastActionTime < 400) {
+				if (now - lastActionTime < TIMING.GHOST_CLICK_WINDOW_MS) {
 					if (e.cancelable) e.preventDefault();
 					e.stopPropagation();
 					return;
@@ -620,8 +740,12 @@
 
 		try {
 			// Translate Question
-			const qRaw = document.getElementById("d-question").innerHTML;
-			document.getElementById("back-q-text").innerHTML = cleanMath(qRaw);
+			const qRawEl = document.getElementById("d-question");
+			const qRaw = qRawEl ? qRawEl.innerHTML : "";
+			const qTextEl = document.getElementById("back-q-text");
+			if (qTextEl) {
+				qTextEl.innerHTML = cleanMath(qRaw);
+			}
 
 			// Render inline image if present
 			const dImage = document.getElementById("d-image");
@@ -680,12 +804,9 @@
 				}
 			}
 
-			const qRawForId = document.getElementById("d-question").innerHTML;
-			const cardId = qRawForId
-				.substring(0, 50)
-				.replace(/[^a-zA-Z0-9]/g, "");
+			const cardId = getCardId(qRaw);
 
-			// Determine Question Type
+			// Determine Question Type with whitelisted types and auto-detection fallback
 			const rawType = (
 				document.getElementById("d-qtype")?.textContent || ""
 			)
@@ -701,21 +822,21 @@
 			});
 
 			let questionType = rawType;
-			if (!questionType) {
+			if (!QUESTION_TYPES.KNOWN_TYPES.includes(questionType)) {
 				const correctCount = validItems.filter((i) => {
 					const f = (i.dataset.flag || "").trim().toLowerCase();
 					return f === "true" || f === "yes" || f === "1";
 				}).length;
 				if (correctCount > 1) {
-					questionType = "MULTIPLE_SELECT";
+					questionType = QUESTION_TYPES.MULTIPLE_SELECT;
 				} else if (validItems.length > 0) {
-					questionType = "MULTIPLE_CHOICE";
+					questionType = QUESTION_TYPES.MULTIPLE_CHOICE;
 				} else if (
 					document.getElementById("d-target")?.textContent.trim()
 				) {
-					questionType = "FILL_IN_THE_BLANK";
+					questionType = QUESTION_TYPES.FILL_IN_THE_BLANK;
 				} else {
-					questionType = "SHORT_ANSWER";
+					questionType = QUESTION_TYPES.SHORT_ANSWER;
 				}
 			}
 
@@ -736,14 +857,17 @@
 				let selectedOpts = [];
 				let hasInteraction = false;
 				try {
-					const stored = sessionStorage.getItem(
-						"notebooklm_ms_sel_" + cardId,
+					const stored = getSessionItem(
+						STORAGE_KEYS.MS_SELECTION + cardId,
 					);
 					if (stored !== null) {
-						selectedOpts = JSON.parse(stored);
-						hasInteraction = true;
+						const parsed = JSON.parse(stored);
+						if (Array.isArray(parsed)) {
+							selectedOpts = parsed;
+							hasInteraction = true;
+						}
 					}
-					sessionStorage.removeItem("notebooklm_ms_sel_" + cardId);
+					removeSessionItem(STORAGE_KEYS.MS_SELECTION + cardId);
 				} catch (e) {}
 
 				const totalCorrect = validItems.filter((i) => {
@@ -790,22 +914,24 @@
 				// Retrieve shuffle order
 				let orderedItems = validItems;
 				try {
-					const storedOrder = sessionStorage.getItem(
-						"notebooklm_shuffle_" + cardId,
+					const storedOrder = getSessionItem(
+						STORAGE_KEYS.SHUFFLE + cardId,
 					);
 					if (storedOrder) {
 						const shuffleKeys = JSON.parse(storedOrder);
-						const temp = [];
-						shuffleKeys.forEach((k) => {
-							const found = validItems.find(
-								(i) => i.dataset.opt === k,
-							);
-							if (found) temp.push(found);
-						});
-						if (temp.length === validItems.length)
-							orderedItems = temp;
+						if (Array.isArray(shuffleKeys)) {
+							const temp = [];
+							shuffleKeys.forEach((k) => {
+								const found = validItems.find(
+									(i) => i.dataset.opt === k,
+								);
+								if (found) temp.push(found);
+							});
+							if (temp.length === validItems.length)
+								orderedItems = temp;
+						}
 					}
-					sessionStorage.removeItem("notebooklm_shuffle_" + cardId);
+					removeSessionItem(STORAGE_KEYS.SHUFFLE + cardId);
 				} catch (e) {}
 
 				orderedItems.forEach((item, index) => {
@@ -869,9 +995,9 @@
 				let typed = "";
 				try {
 					typed =
-						sessionStorage.getItem("notebooklm_typed_" + cardId) ||
+						getSessionItem(STORAGE_KEYS.FITB_TYPED + cardId) ||
 						"";
-					sessionStorage.removeItem("notebooklm_typed_" + cardId);
+					removeSessionItem(STORAGE_KEYS.FITB_TYPED + cardId);
 				} catch (e) {}
 
 				const targetAnswer = (
@@ -918,7 +1044,7 @@
 						</div>
 						<div class="answer-row">
 							<span class="answer-label">Your answer:</span>
-							<span class="answer-value">${typed || "<i>(No response entered)</i>"}</span>
+							<span class="answer-value user-answer-text"></span>
 						</div>
 						${
 							!isCorrect && targetAnswer
@@ -943,6 +1069,19 @@
 					: "";
 
 				interactiveArea.innerHTML = feedbackCard + rationaleCard;
+
+				// Native .textContent assignment eliminates HTML injection and angle-bracket swallowing
+				const userAnsEl = interactiveArea.querySelector(".user-answer-text");
+				if (userAnsEl) {
+					if (typed) {
+						userAnsEl.textContent = typed;
+					} else {
+						const emptyNotice = document.createElement("i");
+						emptyNotice.textContent = "(No response entered)";
+						userAnsEl.appendChild(emptyNotice);
+					}
+				}
+
 				renderContinueButton(
 					isCorrect,
 					null,
@@ -953,11 +1092,11 @@
 				let scratch = "";
 				try {
 					scratch =
-						sessionStorage.getItem(
-							"notebooklm_sa_scratch_" + cardId,
+						getSessionItem(
+							STORAGE_KEYS.SA_SCRATCH + cardId,
 						) || "";
-					sessionStorage.removeItem(
-						"notebooklm_sa_scratch_" + cardId,
+					removeSessionItem(
+						STORAGE_KEYS.SA_SCRATCH + cardId,
 					);
 				} catch (e) {}
 
@@ -976,7 +1115,7 @@
 					? `
 					<div class="sa-user-scratch">
 						<div class="sa-section-title">Your Drafted Answer</div>
-						<div class="sa-scratch-text">${scratch}</div>
+						<div class="sa-scratch-text"></div>
 					</div>
 				`
 					: "";
@@ -1000,11 +1139,16 @@
 				const otherItems = [];
 
 				for (const line of rubricLines) {
-					if (line.startsWith("•") || line.startsWith("-")) {
-						const cleaned = line.replace(/^[•\-]\s*/, "");
+					if (
+						line.startsWith("•") ||
+						line.startsWith("-") ||
+						line.startsWith("*") ||
+						/^\d+[\.)]\s/.test(line)
+					) {
+						const cleaned = line.replace(/^(?:[•\-*]|\d+[\.)])\s*/, "");
 						checkItems.push(cleaned);
-					} else if (line.startsWith("⚠️")) {
-						const cleaned = line.replace(/^⚠️\s*/, "");
+					} else if (line.startsWith("⚠️") || line.startsWith("\u26A0")) {
+						const cleaned = line.replace(/^(?:⚠️|\u26A0)\s*/, "");
 						miscItems.push(cleaned);
 					} else {
 						otherItems.push(line);
@@ -1068,6 +1212,14 @@
 					miscHtml +
 					rationaleHtml;
 
+				// Safely assign drafted scratchpad text via .textContent to preserve math symbols and prevent HTML injection
+				if (scratch) {
+					const scratchEl = interactiveArea.querySelector(".sa-scratch-text");
+					if (scratchEl) {
+						scratchEl.textContent = scratch;
+					}
+				}
+
 				// Attach interactive checkbox listeners
 				const checkBoxes =
 					interactiveArea.querySelectorAll(".rubric-checkbox");
@@ -1115,12 +1267,15 @@
 					const onSaKeyDown = (e) => {
 						if (e.key === "1") {
 							window.removeEventListener("keydown", onSaKeyDown);
+							window.__notebooklmSaKeyDown = null;
 							gradeCard(false);
 						} else if (e.key === "3" || e.code === "Space") {
 							window.removeEventListener("keydown", onSaKeyDown);
+							window.__notebooklmSaKeyDown = null;
 							gradeCard(true);
 						}
 					};
+					window.__notebooklmSaKeyDown = onSaKeyDown;
 					window.addEventListener("keydown", onSaKeyDown);
 
 					const saBtnAgain = document.getElementById("sa-btn-again");
@@ -1136,7 +1291,7 @@
 					 */
 					const handleSaGrade = (markGood, e) => {
 						const now = Date.now();
-						if (now - saLastActionTime < 400) {
+						if (now - saLastActionTime < TIMING.GHOST_CLICK_WINDOW_MS) {
 							if (e.cancelable) e.preventDefault();
 							e.stopPropagation();
 							return;
@@ -1144,6 +1299,7 @@
 						saLastActionTime = now;
 						e.stopPropagation();
 						window.removeEventListener("keydown", onSaKeyDown);
+						window.__notebooklmSaKeyDown = null;
 						gradeCard(markGood);
 					};
 
@@ -1171,14 +1327,14 @@
 				let selectedOpt = null;
 				let selectedCorrect = null;
 				try {
-					selectedOpt = sessionStorage.getItem(
-						"notebooklm_sel_opt_" + cardId,
+					selectedOpt = getSessionItem(
+						STORAGE_KEYS.MC_SELECTED + cardId,
 					);
-					selectedCorrect = sessionStorage.getItem(
-						"notebooklm_sel_corr_" + cardId,
+					selectedCorrect = getSessionItem(
+						STORAGE_KEYS.MC_CORRECT + cardId,
 					);
-					sessionStorage.removeItem("notebooklm_sel_opt_" + cardId);
-					sessionStorage.removeItem("notebooklm_sel_corr_" + cardId);
+					removeSessionItem(STORAGE_KEYS.MC_SELECTED + cardId);
+					removeSessionItem(STORAGE_KEYS.MC_CORRECT + cardId);
 				} catch (e) {}
 
 				let pillHtml = "";
@@ -1205,22 +1361,24 @@
 
 				let orderedItems = validItems;
 				try {
-					const storedOrder = sessionStorage.getItem(
-						"notebooklm_shuffle_" + cardId,
+					const storedOrder = getSessionItem(
+						STORAGE_KEYS.SHUFFLE + cardId,
 					);
 					if (storedOrder) {
 						const shuffleKeys = JSON.parse(storedOrder);
-						const temp = [];
-						shuffleKeys.forEach((k) => {
-							const found = validItems.find(
-								(i) => i.dataset.opt === k,
-							);
-							if (found) temp.push(found);
-						});
-						if (temp.length === validItems.length)
-							orderedItems = temp;
+						if (Array.isArray(shuffleKeys)) {
+							const temp = [];
+							shuffleKeys.forEach((k) => {
+								const found = validItems.find(
+									(i) => i.dataset.opt === k,
+								);
+								if (found) temp.push(found);
+							});
+							if (temp.length === validItems.length)
+								orderedItems = temp;
+						}
 					}
-					sessionStorage.removeItem("notebooklm_shuffle_" + cardId);
+					removeSessionItem(STORAGE_KEYS.SHUFFLE + cardId);
 				} catch (e) {}
 
 				orderedItems.forEach((item, index) => {
@@ -1283,7 +1441,7 @@
 				}
 			}
 
-			setTimeout(() => triggerMath(document.body), 100);
+			setTimeout(() => triggerMath(document.body), TIMING.MATHJAX_RENDER_DELAY_MS);
 		} catch (e) {
 			console.log("Back Template Error:", e);
 		}
