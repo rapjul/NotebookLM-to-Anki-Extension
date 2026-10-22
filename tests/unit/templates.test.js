@@ -458,8 +458,8 @@ test("templates: fill-in-the-blank skipped state feedback and continue button", 
 		"back.html should apply card-skipped class when skipped",
 	);
 	assert.ok(
-		backHtml.includes('"Continue (Mark Skipped)"'),
-		"back.html should provide Continue (Mark Skipped) button label",
+		backHtml.includes('"Again (Mark Skipped)"'),
+		"back.html should provide Again (Mark Skipped) button label",
 	);
 	assert.ok(
 		backHtml.includes("isSkipped = false"),
@@ -602,4 +602,159 @@ test("templates: all double curly braces match valid Anki note fields or conditi
 			);
 		}
 	}
+});
+
+test("templates: back.html continue button multi-platform grading and mobile tap support", () => {
+	const frontPath = path.join(srcDir, "anki_templates/front.html");
+	const frontHtml = fs.readFileSync(frontPath, "utf-8");
+	const backPath = path.join(srcDir, "anki_templates/back.html");
+	const backHtml = fs.readFileSync(backPath, "utf-8");
+	const cssPath = path.join(srcDir, "anki_templates/styling.css");
+	const cssContent = fs.readFileSync(cssPath, "utf-8");
+
+	// Front lifecycle export and isInteractive inclusion
+	assert.ok(
+		frontHtml.includes("window.__notebooklmFrontTapHandler = interceptTap;"),
+		"front.html should expose window.__notebooklmFrontTapHandler for safe lifecycle cleanup",
+	);
+	assert.ok(
+		frontHtml.includes('e.target.closest(".continue-btn")'),
+		"front.html isInteractive check should permit .continue-btn to prevent swallowing taps across persistent WKWebView",
+	);
+
+	// Back lifecycle cleanup
+	assert.ok(
+		backHtml.includes("window.__notebooklmFrontTapHandler") &&
+			backHtml.includes('window.removeEventListener(\n\t\t\t\t"click",\n\t\t\t\twindow.__notebooklmFrontTapHandler'),
+		"back.html should detach lingering front tap handlers",
+	);
+	assert.ok(
+		backHtml.includes("window.__notebooklmAllowHostFlip = true;"),
+		"back.html should reset window.__notebooklmAllowHostFlip to allow host grading gestures",
+	);
+
+	// Multi-platform grading support
+	assert.ok(
+		backHtml.includes("bridgeCommand(easeCmd)") &&
+			backHtml.includes('pycmd(easeCmd);'),
+		"back.html gradeCard should dispatch bridgeCommand/pycmd ease3/ease1 on Desktop",
+	);
+	assert.ok(
+		backHtml.includes("ankiAnswerEase3") && backHtml.includes("ankiAnswerEase1"),
+		"back.html gradeCard should support direct AnkiDroid answer APIs",
+	);
+	assert.ok(
+		backHtml.includes("AnkiDroidJS"),
+		"back.html gradeCard should support AnkiDroidJS bridge object",
+	);
+	assert.ok(
+		backHtml.includes("window.webkit.messageHandlers.bridgeCommand") &&
+			backHtml.includes("window.webkit.messageHandlers.cb"),
+		"back.html gradeCard should support AnkiMobile WebKit bridgeCommand and callback message handlers",
+	);
+	assert.ok(
+		backHtml.includes('scheme: "ankitap"') &&
+			backHtml.includes('msg: isCorrect ? "midRight" : "midLeft"'),
+		"back.html gradeCard should support AnkiMobile ankitap gesture bridge for midRight (Good) and midLeft (Again)",
+	);
+	assert.ok(
+		backHtml.includes('window.sendMessage2(\n\t\t\t\t\t\t"ankitap"'),
+		"back.html gradeCard should support window.sendMessage2 for legacy iOS wrappers",
+	);
+
+	// Mobile detection and button construction
+	assert.ok(
+		backHtml.includes("function isMobilePlatform()"),
+		"back.html should define isMobilePlatform detection helper",
+	);
+	assert.ok(
+		backHtml.includes('navigator.maxTouchPoints > 1 &&\n\t\t\t\t\t(navigator.platform === "MacIntel"'),
+		"back.html isMobilePlatform should recognize iPadOS touch screens with MacIntel desktop-class user agent",
+	);
+	assert.ok(
+		backHtml.includes("function shouldShowKeyboardHints()"),
+		"back.html should define shouldShowKeyboardHints helper for smart keyboard hint auto-detection",
+	);
+	assert.ok(
+		backHtml.includes('window.matchMedia("(pointer: fine)")'),
+		"back.html should detect Magic Keyboard / mouse fine pointers via matchMedia",
+	);
+	assert.ok(
+		backHtml.includes('sessionStorage.getItem("notebooklm_has_keyboard") === "true"'),
+		"back.html should detect session-cached physical keyboard usage",
+	);
+	assert.ok(
+		backHtml.includes("continueBtn.className = `continue-btn tappable ${btnStateClass}`;"),
+		"back.html renderContinueButton should assign .tappable class for iOS WKWebView tap pass-through",
+	);
+	assert.ok(
+		backHtml.includes('continueBtn.type = "button";'),
+		"back.html renderContinueButton should explicitly set type='button'",
+	);
+
+	// Platform-adaptive button labels
+	assert.ok(
+		backHtml.includes('"Good (Mark Correct)"') &&
+			backHtml.includes('"Good (Mark Correct) [Space / 3]"'),
+		"back.html should provide clean mobile label and desktop keyboard hint for correct answers",
+	);
+	assert.ok(
+		backHtml.includes('"Again (Mark Incorrect)"') &&
+			backHtml.includes('"Again (Mark Incorrect) [1]"'),
+		"back.html should provide clean mobile label and desktop keyboard hint for incorrect answers",
+	);
+	assert.ok(
+		backHtml.includes('"Again (Mark Skipped)"') &&
+			backHtml.includes('"Again (Mark Skipped) [1]"'),
+		"back.html should provide clean mobile label and desktop keyboard hint for skipped answers",
+	);
+	assert.ok(
+		backHtml.includes('"Again (Review Later) [1]"') &&
+			backHtml.includes('"Good (Understood) [Space / 3]"'),
+		"back.html short-answer buttons should include desktop keyboard hints",
+	);
+
+	// Mobile gating and top grade banner
+	assert.ok(
+		backHtml.includes("if (isMobilePlatform()) {\n\t\t\t\treturn;\n\t\t\t}"),
+		"back.html renderContinueButton should return early on mobile to let users rely on native AnkiMobile buttons",
+	);
+	assert.ok(
+		backHtml.includes("if (actionContainer && !isMobilePlatform())"),
+		"back.html should gate short answer action buttons to desktop platforms only",
+	);
+	assert.ok(
+		backHtml.includes('"✓ Correct (Good)"') &&
+			backHtml.includes('"✕ Incorrect (Again)"'),
+		"back.html should render top-level score pill above choices for single-choice multiple choice",
+	);
+	assert.ok(
+		backHtml.includes('${correctSelected}/${totalCorrect} Correct ${isFullyCorrect ? "(Good)" : "(Again)"}'),
+		"back.html should render top-level score pill with rating intent for multi-select questions",
+	);
+
+	// Touch and click handling
+	assert.ok(
+		backHtml.includes("continueBtn.onclick = handleAction;") &&
+			backHtml.includes('continueBtn.addEventListener("touchend", handleAction);'),
+		"back.html renderContinueButton should assign onclick property and touchend listener for iOS tap pass-through",
+	);
+
+	// Styling rules
+	assert.ok(
+		cssContent.includes("touch-action: manipulation;"),
+		"styling.css .continue-btn should specify touch-action: manipulation to eliminate 300ms tap delay",
+	);
+	assert.ok(
+		cssContent.includes("padding: 14px 16px;"),
+		"styling.css .continue-btn should use comfortable padding for touch targets",
+	);
+	assert.ok(
+		cssContent.includes("min-height: 48px;"),
+		"styling.css .continue-btn should maintain at least 48px touch target height",
+	);
+	assert.ok(
+		cssContent.includes(".mode-centered .continue-btn,\n.mode-centered .tappable,\n.mode-centered #action-container"),
+		"styling.css should ensure pointer-events: auto for continue buttons, tappables, and action containers",
+	);
 });
