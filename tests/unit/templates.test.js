@@ -207,6 +207,24 @@ test("templates: styling.css rules", () => {
 		"styling.css .rubric-item should vertically center checkboxes and labels with align-items: center",
 	);
 
+	// Verify button and choice block margin resets to prevent Anki reviewer.css margin inheritance
+	assert.ok(
+		/\.main-wrapper button\s*\{[^}]*margin:\s*0;/s.test(cssContent),
+		"styling.css should declare scoped button margin reset (.main-wrapper button { margin: 0; }) to override host reviewer.css without polluting global scope",
+	);
+	assert.ok(
+		/\.option-block,\s*\.ms-option-btn,\s*\.mc-option-btn\s*\{[^}]*margin:\s*0;/s.test(cssContent),
+		"styling.css choice blocks should explicitly declare margin: 0; to prevent gap distortion in flex containers",
+	);
+	assert.ok(
+		/\.submit-btn\s*\{[^}]*margin:\s*20px 0 0 0;/s.test(cssContent),
+		"styling.css .submit-btn should declare margin: 20px 0 0 0; to prevent side and bottom margin inheritance",
+	);
+	assert.ok(
+		/\.continue-btn\s*\{[^}]*margin:\s*20px 0 0 0;/s.test(cssContent),
+		"styling.css .continue-btn should declare margin: 20px 0 0 0; to prevent side and bottom margin inheritance",
+	);
+
 	// Verify strict ceiling on !important usage (only .is-hidden utility is permitted)
 	const importantMatches = cssContent.match(/!important/g) || [];
 	assert.ok(

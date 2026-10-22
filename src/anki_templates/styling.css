@@ -115,6 +115,10 @@ body {
   display: flex;
 }
 
+.main-wrapper button {
+  margin: 0;
+}
+
 .quiz-column {
   display: flex;
   flex-direction: column;
@@ -464,6 +468,7 @@ body {
 .option-block,
 .ms-option-btn,
 .mc-option-btn {
+  margin: 0;
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -891,7 +896,7 @@ body {
   border: none;
   border-radius: var(--radius-pill);
   padding: 12px 24px;
-  margin-top: 20px;
+  margin: 20px 0 0 0;
   cursor: pointer;
   display: block;
   width: 100%;
@@ -941,7 +946,7 @@ body {
   transition:
     background-color var(--transition-base),
     transform 0.1s;
-  margin-top: 20px;
+  margin: 20px 0 0 0;
   box-sizing: border-box;
 }
 
