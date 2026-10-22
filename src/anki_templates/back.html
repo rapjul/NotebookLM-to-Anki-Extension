@@ -59,7 +59,21 @@
 
 <script>
 	(function () {
-		// Defensive cleanup of any front-side keyboard viewport listeners in persistent WKWebView
+		// Defensive cleanup of any front-side tap and keyboard viewport listeners in persistent WKWebView
+		window.__notebooklmAllowHostFlip = true;
+		if (window.__notebooklmFrontTapHandler) {
+			window.removeEventListener(
+				"click",
+				window.__notebooklmFrontTapHandler,
+				true,
+			);
+			window.removeEventListener(
+				"touchend",
+				window.__notebooklmFrontTapHandler,
+				true,
+			);
+			window.__notebooklmFrontTapHandler = null;
+		}
 		if (window.__notebooklmViewportHandler && window.visualViewport) {
 			window.visualViewport.removeEventListener(
 				"resize",
@@ -94,7 +108,10 @@
 						e.target.closest(".fitb-input") ||
 						e.target.closest(".sa-scratchpad") ||
 						e.target.closest(".question-media img") ||
-						e.target.closest(".diagram-alt-description");
+						e.target.closest(".diagram-alt-description") ||
+						e.target.closest(".continue-btn") ||
+						e.target.closest("#action-container") ||
+						e.target.closest(".self-grade-container");
 					if (isInteractive) {
 						e.stopPropagation();
 					} else {
@@ -178,18 +195,216 @@
 		}
 
 		/**
-		 * Dispatches answer grading command to Anki (ease3 for Good, ease1 for Again)
-		 * across Desktop, AnkiMobile, and AnkiDroid platforms.
+		 * Determines whether the card is being rendered on a mobile client.
+		 * Checks for AnkiMobile (iPhone/iPad), AnkiDroid, and mobile browser characteristics.
 		 *
-		 * @param {boolean} isCorrect - True if user answered correctly (ease3), false if incorrect (ease1).
+		 * @returns {boolean} True if running on AnkiMobile, AnkiDroid, or mobile browser.
+		 */
+		function isMobilePlatform() {
+			const rootClassList = document.documentElement.classList;
+			const bodyClassList = document.body ? document.body.classList : null;
+			const hasMobileClass =
+				rootClassList.contains("mobile") ||
+				rootClassList.contains("ipad") ||
+				rootClassList.contains("iphone") ||
+				rootClassList.contains("ios") ||
+				rootClassList.contains("android") ||
+				Boolean(
+					bodyClassList &&
+						(bodyClassList.contains("mobile") ||
+							bodyClassList.contains("ipad") ||
+							bodyClassList.contains("iphone") ||
+							bodyClassList.contains("ios") ||
+							bodyClassList.contains("android")),
+				);
+
+			const hasAnkiDroid =
+				typeof AnkiDroidJS !== "undefined" ||
+				typeof ankiAnswerEase1 === "function" ||
+				typeof buttonAnswerEase1 === "function";
+
+			const hasAnkiMobile = Boolean(
+				(window.webkit &&
+					window.webkit.messageHandlers &&
+					(window.webkit.messageHandlers.cb ||
+						window.webkit.messageHandlers.bridgeCommand)) ||
+					window.anki,
+			);
+
+			const isTouchScreen = Boolean(
+				(typeof navigator !== "undefined" &&
+					navigator.maxTouchPoints > 1 &&
+					(navigator.platform === "MacIntel" ||
+						/Macintosh/i.test(navigator.userAgent))) ||
+					(typeof window !== "undefined" &&
+						typeof window.orientation !== "undefined"),
+			);
+
+			const isMobileUserAgent =
+				typeof navigator !== "undefined" &&
+				/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+			return Boolean(
+				hasMobileClass ||
+					hasAnkiDroid ||
+					hasAnkiMobile ||
+					isTouchScreen ||
+					isMobileUserAgent,
+			);
+		}
+
+		/**
+		 * Records physical keyboard usage in sessionStorage to persist hardware keyboard awareness.
+		 *
+		 * @param {KeyboardEvent} e - Keydown event.
+		 * @returns {void}
+		 */
+		const recordBackKeyboardUsage = (e) => {
+			if (e.key) {
+				try {
+					sessionStorage.setItem("notebooklm_has_keyboard", "true");
+				} catch (err) {}
+			}
+		};
+		window.addEventListener("keydown", recordBackKeyboardUsage);
+
+		/**
+		 * Determines whether keyboard shortcut hints should be displayed on action buttons.
+		 * Displays hints on desktop platforms, or on mobile/iPad when a fine pointer
+		 * (Magic Keyboard / mouse) or physical keypress has been detected in this session.
+		 *
+		 * @returns {boolean} True if keyboard hints should be shown.
+		 */
+		function shouldShowKeyboardHints() {
+			if (!isMobilePlatform()) {
+				return true;
+			}
+			const hasFinePointer = Boolean(
+				typeof window !== "undefined" &&
+					window.matchMedia &&
+					window.matchMedia("(pointer: fine)").matches,
+			);
+			let sessionKeyDetected = false;
+			try {
+				sessionKeyDetected =
+					sessionStorage.getItem("notebooklm_has_keyboard") === "true";
+			} catch (e) {}
+			return Boolean(hasFinePointer || sessionKeyDetected);
+		}
+
+		/**
+		 * Dispatches answer grading command to Anki (Good for correct, Again for incorrect)
+		 * across Desktop, AnkiMobile, AnkiDroid, and Web platforms.
+		 *
+		 * @param {boolean} isCorrect - True if user answered correctly (Good), false if incorrect (Again).
 		 * @returns {void}
 		 */
 		function gradeCard(isCorrect) {
-			if (typeof pycmd !== "undefined") {
-				pycmd(isCorrect ? "ease3" : "ease1");
-			} else if (typeof buttonClick !== "undefined") {
-				buttonClick(isCorrect ? 3 : 1);
+			const easeCmd = isCorrect ? "ease3" : "ease1";
+
+			// 1. Modern Anki Desktop & Webview bridgeCommand
+			if (typeof bridgeCommand === "function") {
+				bridgeCommand(easeCmd);
+				return;
 			}
+
+			// 2. Anki Desktop legacy pycmd
+			if (typeof pycmd !== "undefined") {
+				pycmd(easeCmd);
+				return;
+			}
+
+			// 3. AnkiDroid (direct global bridge or window.AnkiDroidJS)
+			if (
+				typeof ankiAnswerEase3 === "function" ||
+				typeof ankiAnswerEase1 === "function"
+			) {
+				if (isCorrect && typeof ankiAnswerEase3 === "function") {
+					ankiAnswerEase3();
+				} else if (!isCorrect && typeof ankiAnswerEase1 === "function") {
+					ankiAnswerEase1();
+				}
+				return;
+			}
+			if (
+				typeof buttonAnswerEase3 === "function" ||
+				typeof buttonAnswerEase1 === "function"
+			) {
+				if (isCorrect && typeof buttonAnswerEase3 === "function") {
+					buttonAnswerEase3();
+				} else if (!isCorrect && typeof buttonAnswerEase1 === "function") {
+					buttonAnswerEase1();
+				}
+				return;
+			}
+			if (typeof AnkiDroidJS !== "undefined") {
+				if (
+					isCorrect &&
+					typeof AnkiDroidJS.ankiAnswerEase3 === "function"
+				) {
+					AnkiDroidJS.ankiAnswerEase3();
+					return;
+				} else if (
+					!isCorrect &&
+					typeof AnkiDroidJS.ankiAnswerEase1 === "function"
+				) {
+					AnkiDroidJS.ankiAnswerEase1();
+					return;
+				}
+			}
+
+			// 4. AnkiMobile (iOS WebKit bridgeCommand)
+			if (
+				window.webkit &&
+				window.webkit.messageHandlers &&
+				window.webkit.messageHandlers.bridgeCommand
+			) {
+				try {
+					window.webkit.messageHandlers.bridgeCommand.postMessage(easeCmd);
+					return;
+				} catch (err) {}
+			}
+
+			// 5. AnkiMobile (iOS WebKit callback bridge via ankitap gesture)
+			if (
+				window.webkit &&
+				window.webkit.messageHandlers &&
+				window.webkit.messageHandlers.cb
+			) {
+				try {
+					window.webkit.messageHandlers.cb.postMessage(
+						JSON.stringify({
+							scheme: "ankitap",
+							msg: isCorrect ? "midRight" : "midLeft",
+						}),
+					);
+					return;
+				} catch (err) {}
+			}
+			if (window.anki && typeof window.sendMessage2 === "function") {
+				try {
+					window.sendMessage2(
+						"ankitap",
+						isCorrect ? "midRight" : "midLeft",
+					);
+					return;
+				} catch (err) {}
+			}
+
+			// 6. Fallback: Keyboard event dispatch (Desktop webviews / AnkiWeb)
+			try {
+				const keyCode = isCorrect ? 51 : 49; // '3' or '1'
+				const keyChar = isCorrect ? "3" : "1";
+				const ev = new KeyboardEvent("keydown", {
+					key: keyChar,
+					code: isCorrect ? "Digit3" : "Digit1",
+					which: keyCode,
+					keyCode: keyCode,
+					bubbles: true,
+					cancelable: true,
+				});
+				document.dispatchEvent(ev);
+			} catch (e) {}
 		}
 
 		/**
@@ -209,22 +424,62 @@
 			if (!actionContainer) return;
 
 			actionContainer.innerHTML = "";
+
+			// On mobile clients (e.g. AnkiMobile), do not render in-card continue button.
+			// Users rely directly on the host application's native bottom grading buttons.
+			if (isMobilePlatform()) {
+				return;
+			}
+
 			const continueBtn = document.createElement("button");
+			continueBtn.type = "button";
 			const btnStateClass = isCorrect
 				? "btn-correct"
 				: isSkipped
 					? "btn-skipped"
 					: "btn-wrong";
-			continueBtn.className = `continue-btn ${btnStateClass}`;
-			continueBtn.textContent =
-				label ||
-				(isCorrect
-					? "Continue (Mark Correct)"
-					: isSkipped
-						? "Continue (Mark Skipped)"
-						: "Continue (Mark Incorrect)");
+			continueBtn.className = `continue-btn tappable ${btnStateClass}`;
 
-			continueBtn.addEventListener("click", () => gradeCard(isCorrect));
+			const showHints = shouldShowKeyboardHints();
+			let defaultLabel = "";
+			if (isCorrect) {
+				defaultLabel = showHints
+					? "Good (Mark Correct) [Space / 3]"
+					: "Good (Mark Correct)";
+			} else if (isSkipped) {
+				defaultLabel = showHints
+					? "Again (Mark Skipped) [1]"
+					: "Again (Mark Skipped)";
+			} else {
+				defaultLabel = showHints
+					? "Again (Mark Incorrect) [1]"
+					: "Again (Mark Incorrect)";
+			}
+
+			continueBtn.textContent = label || defaultLabel;
+
+			let lastActionTime = 0;
+			/**
+			 * Handles tap and click events on the continue button with ghost-click suppression.
+			 *
+			 * @param {Event} e - Touch or click event.
+			 * @returns {void}
+			 */
+			const handleAction = (e) => {
+				const now = Date.now();
+				if (now - lastActionTime < 400) {
+					if (e.cancelable) e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
+				lastActionTime = now;
+				e.stopPropagation();
+				gradeCard(isCorrect);
+			};
+
+			continueBtn.onclick = handleAction;
+			continueBtn.addEventListener("touchend", handleAction);
+			continueBtn.addEventListener("click", handleAction);
 			actionContainer.appendChild(continueBtn);
 		}
 
@@ -513,18 +768,14 @@
 					correctSelected === totalCorrect &&
 					wrongSelected === 0;
 
-				const pillHtml = hasInteraction
-					? `
+				const pillText = hasInteraction
+					? `${correctSelected}/${totalCorrect} Correct ${isFullyCorrect ? "(Good)" : "(Again)"}`
+					: `Select all that apply (${totalCorrect} correct)`;
+
+				const pillHtml = `
 					<div class="score-pill-container">
-						<div class="score-pill ${isFullyCorrect ? "pill-correct" : "pill-wrong"}">
-							${correctSelected}/${totalCorrect} Correct
-						</div>
-					</div>
-				`
-					: `
-					<div class="score-pill-container">
-						<div class="score-pill pill-correct">
-							Select all that apply (${totalCorrect} correct)
+						<div class="score-pill ${isFullyCorrect || !hasInteraction ? "pill-correct" : "pill-wrong"}">
+							${pillText}
 						</div>
 					</div>
 				`;
@@ -694,7 +945,7 @@
 				interactiveArea.innerHTML = feedbackCard + rationaleCard;
 				renderContinueButton(
 					isCorrect,
-					isSkipped ? "Continue (Mark Skipped)" : null,
+					null,
 					isSkipped,
 				);
 			} else if (questionType === "SHORT_ANSWER") {
@@ -833,16 +1084,24 @@
 					});
 				});
 
-				// Self-Grade Action Buttons
+				// Self-Grade Action Buttons (Desktop only; on mobile, users grade via native bottom bar)
 				const actionContainer =
 					document.getElementById("action-container");
-				if (actionContainer) {
+				if (actionContainer && !isMobilePlatform()) {
+					const showHints = shouldShowKeyboardHints();
+					const againLabel = showHints
+						? "Again (Review Later) [1]"
+						: "Again (Review Later)";
+					const goodLabel = showHints
+						? "Good (Understood) [Space / 3]"
+						: "Good (Understood)";
+
 					actionContainer.innerHTML = `
 						<div class="self-grade-container">
 							<div class="self-grade-title">How well did your response match the rubric?</div>
 							<div class="self-grade-buttons">
-								<button class="continue-btn btn-wrong" id="sa-btn-again">Again (Review Later)</button>
-								<button class="continue-btn btn-correct" id="sa-btn-good">Good (Understood)</button>
+								<button type="button" class="continue-btn tappable btn-wrong" id="sa-btn-again">${againLabel}</button>
+								<button type="button" class="continue-btn tappable btn-correct" id="sa-btn-good">${goodLabel}</button>
 							</div>
 						</div>
 					`;
@@ -864,18 +1123,48 @@
 					};
 					window.addEventListener("keydown", onSaKeyDown);
 
-					document
-						.getElementById("sa-btn-again")
-						?.addEventListener("click", () => {
-							window.removeEventListener("keydown", onSaKeyDown);
-							gradeCard(false);
-						});
-					document
-						.getElementById("sa-btn-good")
-						?.addEventListener("click", () => {
-							window.removeEventListener("keydown", onSaKeyDown);
-							gradeCard(true);
-						});
+					const saBtnAgain = document.getElementById("sa-btn-again");
+					const saBtnGood = document.getElementById("sa-btn-good");
+
+					let saLastActionTime = 0;
+					/**
+					 * Handles click and touch interactions for short answer self-grading.
+					 *
+					 * @param {boolean} markGood - True for Good, false for Again.
+					 * @param {Event} e - Click or touch event.
+					 * @returns {void}
+					 */
+					const handleSaGrade = (markGood, e) => {
+						const now = Date.now();
+						if (now - saLastActionTime < 400) {
+							if (e.cancelable) e.preventDefault();
+							e.stopPropagation();
+							return;
+						}
+						saLastActionTime = now;
+						e.stopPropagation();
+						window.removeEventListener("keydown", onSaKeyDown);
+						gradeCard(markGood);
+					};
+
+					if (saBtnAgain) {
+						saBtnAgain.onclick = (e) => handleSaGrade(false, e);
+						saBtnAgain.addEventListener("touchend", (e) =>
+							handleSaGrade(false, e),
+						);
+						saBtnAgain.addEventListener("click", (e) =>
+							handleSaGrade(false, e),
+						);
+					}
+					if (saBtnGood) {
+						saBtnGood.onclick = (e) => handleSaGrade(true, e);
+						saBtnGood.addEventListener("touchend", (e) =>
+							handleSaGrade(true, e),
+						);
+						saBtnGood.addEventListener("click", (e) =>
+							handleSaGrade(true, e),
+						);
+					}
 				}
 			} else {
 				// --- MULTIPLE CHOICE FEEDBACK ---
@@ -892,7 +1181,26 @@
 					sessionStorage.removeItem("notebooklm_sel_corr_" + cardId);
 				} catch (e) {}
 
-				interactiveArea.innerHTML = `<div class="options-list" id="back-options"></div>`;
+				let pillHtml = "";
+				if (selectedCorrect !== null) {
+					const isCorrect = selectedCorrect === "true";
+					const pillClass = isCorrect ? "pill-correct" : "pill-wrong";
+					const pillText = isCorrect
+						? "✓ Correct (Good)"
+						: "✕ Incorrect (Again)";
+					pillHtml = `
+						<div class="score-pill-container">
+							<div class="score-pill ${pillClass}">
+								${pillText}
+							</div>
+						</div>
+					`;
+				}
+
+				interactiveArea.innerHTML = `
+					${pillHtml}
+					<div class="options-list" id="back-options"></div>
+				`;
 				const container = document.getElementById("back-options");
 
 				let orderedItems = validItems;

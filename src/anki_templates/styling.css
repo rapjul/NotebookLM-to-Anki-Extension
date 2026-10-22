@@ -933,13 +933,15 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 12px;
+  padding: 14px 16px;
+  min-height: 48px;
   border-radius: var(--radius-xl);
   font-size: 1.05rem;
   font-weight: bold;
   cursor: pointer;
   border: none;
   color: var(--text-primary);
+  touch-action: manipulation;
   transition:
     background-color var(--transition-base),
     transform 0.1s;
@@ -1160,6 +1162,9 @@ mjx-container:not([display="true"]) {
 .mode-centered .hint-btn,
 .mode-centered .submit-btn,
 .mode-centered .continue-btn,
+.mode-centered .tappable,
+.mode-centered #action-container,
+.mode-centered .self-grade-container,
 .mode-centered .self-grade-buttons button {
   pointer-events: auto;
 }
@@ -1178,6 +1183,9 @@ mjx-container:not([display="true"]) {
 #layout-root .sa-scratchpad,
 #layout-root .sa-submit-btn,
 #layout-root .continue-btn,
+#layout-root .tappable,
+#layout-root #action-container,
+#layout-root .self-grade-container,
 #layout-root .self-grade-container button {
   pointer-events: auto;
 }
@@ -1190,7 +1198,8 @@ mjx-container:not([display="true"]) {
 .mode-split .option-block,
 .mode-split .mc-option-btn,
 .mode-split .ms-option-btn,
-.mode-split .continue-btn {
+.mode-split .continue-btn,
+.mode-split .tappable {
   pointer-events: auto;
 }
 

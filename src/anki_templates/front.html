@@ -86,6 +86,19 @@
 	(function () {
 		// Clean lifecycle reset for AnkiMobile's persistent WKWebView across cards
 		window.__notebooklmAllowHostFlip = false;
+		if (window.__notebooklmFrontTapHandler) {
+			window.removeEventListener(
+				"click",
+				window.__notebooklmFrontTapHandler,
+				true,
+			);
+			window.removeEventListener(
+				"touchend",
+				window.__notebooklmFrontTapHandler,
+				true,
+			);
+			window.__notebooklmFrontTapHandler = null;
+		}
 		if (window.__notebooklmViewportHandler && window.visualViewport) {
 			window.visualViewport.removeEventListener(
 				"resize",
@@ -100,6 +113,21 @@
 			);
 			window.__notebooklmWindowResizeHandler = null;
 		}
+
+		/**
+		 * Records physical keyboard usage in sessionStorage to persist hardware keyboard awareness.
+		 *
+		 * @param {KeyboardEvent} e - Keydown event.
+		 * @returns {void}
+		 */
+		const recordFrontKeyboardUsage = (e) => {
+			if (e.key) {
+				try {
+					sessionStorage.setItem("notebooklm_has_keyboard", "true");
+				} catch (err) {}
+			}
+		};
+		window.addEventListener("keydown", recordFrontKeyboardUsage);
 
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
 		// EXCEPT when interacting with inputs, buttons, options, or hint.
@@ -125,6 +153,9 @@
 					e.target.closest(".mc-option-btn") ||
 					e.target.closest(".option-block") ||
 					e.target.closest(".submit-btn") ||
+					e.target.closest(".continue-btn") ||
+					e.target.closest("#action-container") ||
+					e.target.closest(".self-grade-container") ||
 					e.target.closest(".sa-scratchpad") ||
 					e.target.closest(".sa-submit-btn") ||
 					e.target.closest(".tappable") ||
@@ -140,6 +171,7 @@
 			e.stopPropagation();
 			if (e.cancelable) e.preventDefault();
 		};
+		window.__notebooklmFrontTapHandler = interceptTap;
 		window.addEventListener("click", interceptTap, true);
 		window.addEventListener("touchend", interceptTap, true);
 
@@ -362,6 +394,19 @@
 		 */
 		function flipToBack() {
 			window.__notebooklmAllowHostFlip = true;
+			if (window.__notebooklmFrontTapHandler) {
+				window.removeEventListener(
+					"click",
+					window.__notebooklmFrontTapHandler,
+					true,
+				);
+				window.removeEventListener(
+					"touchend",
+					window.__notebooklmFrontTapHandler,
+					true,
+				);
+				window.__notebooklmFrontTapHandler = null;
+			}
 			if (window.__notebooklmViewportHandler && window.visualViewport) {
 				window.visualViewport.removeEventListener(
 					"resize",
