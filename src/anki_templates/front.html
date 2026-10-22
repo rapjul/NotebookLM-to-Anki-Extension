@@ -113,6 +113,105 @@
 			);
 			window.__notebooklmWindowResizeHandler = null;
 		}
+		if (window.__notebooklmKeydownHandler) {
+			window.removeEventListener(
+				"keydown",
+				window.__notebooklmKeydownHandler,
+			);
+			window.__notebooklmKeydownHandler = null;
+		}
+		if (window.__notebooklmSaKeyDown) {
+			window.removeEventListener(
+				"keydown",
+				window.__notebooklmSaKeyDown,
+			);
+			window.__notebooklmSaKeyDown = null;
+		}
+
+		// --- CENTRALIZED CONSTANTS & STORAGE REGISTRIES ---
+		const STORAGE_KEYS = {
+			SHUFFLE: "notebooklm_shuffle_",
+			MS_SELECTION: "notebooklm_ms_sel_",
+			FITB_TYPED: "notebooklm_typed_",
+			SA_SCRATCH: "notebooklm_sa_scratch_",
+			MC_SELECTED: "notebooklm_sel_opt_",
+			MC_CORRECT: "notebooklm_sel_corr_",
+			KEYBOARD_DETECTED: "notebooklm_has_keyboard",
+		};
+
+		const TIMING = {
+			GHOST_CLICK_WINDOW_MS: 400,
+			MATHJAX_RENDER_DELAY_MS: 100,
+			FITB_FOCUS_DELAY_MS: 150,
+			SHAKE_ANIMATION_MS: 500,
+			KEYBOARD_SCROLL_DELAYS_MS: [50, 150, 300, 450, 600],
+		};
+
+		const QUESTION_TYPES = {
+			MULTIPLE_CHOICE: "MULTIPLE_CHOICE",
+			MULTIPLE_SELECT: "MULTIPLE_SELECT",
+			FILL_IN_THE_BLANK: "FILL_IN_THE_BLANK",
+			SHORT_ANSWER: "SHORT_ANSWER",
+			KNOWN_TYPES: [
+				"MULTIPLE_CHOICE",
+				"MULTIPLE_SELECT",
+				"FILL_IN_THE_BLANK",
+				"SHORT_ANSWER",
+			],
+		};
+
+		// In-memory fallback dictionary for private browsing or restricted webview storage
+		window.__notebooklmMemoryStore = window.__notebooklmMemoryStore || {};
+
+		/**
+		 * Safely writes a key-value pair to sessionStorage with an in-memory fallback.
+		 *
+		 * @param {string} key - Storage key name.
+		 * @param {string} value - String value to store.
+		 * @returns {void}
+		 */
+		function setSessionItem(key, value) {
+			try {
+				sessionStorage.setItem(key, value);
+			} catch (err) {
+				window.__notebooklmMemoryStore[key] = value;
+			}
+		}
+
+		/**
+		 * Safely reads a key from sessionStorage with an in-memory fallback.
+		 *
+		 * @param {string} key - Storage key name.
+		 * @returns {string|null} Stored value or null if absent.
+		 */
+		function getSessionItem(key) {
+			try {
+				const val = sessionStorage.getItem(key);
+				if (val !== null) return val;
+			} catch (err) {}
+			return window.__notebooklmMemoryStore[key] ?? null;
+		}
+
+		/**
+		 * Generates a safe, collision-resistant identifier for the current card.
+		 * Preserves Unicode word characters across CJK, Cyrillic, and Arabic alphabets,
+		 * with a deterministic numeric hash fallback for non-alphanumeric prompts.
+		 *
+		 * @param {string} raw - Raw question text.
+		 * @returns {string} Sanitized alphanumeric card identifier.
+		 */
+		function getCardId(raw) {
+			const clean = (raw || "").substring(0, 50).replace(/[^\p{L}\p{N}]/gu, "");
+			if (clean) return clean;
+			// Deterministic numeric hash fallback when prompt contains no alphanumeric characters
+			let hash = 0;
+			const str = raw || "";
+			for (let i = 0; i < str.length; i++) {
+				hash = ((hash << 5) - hash) + str.charCodeAt(i);
+				hash |= 0;
+			}
+			return "card_" + Math.abs(hash);
+		}
 
 		/**
 		 * Records physical keyboard usage in sessionStorage to persist hardware keyboard awareness.
@@ -122,11 +221,10 @@
 		 */
 		const recordFrontKeyboardUsage = (e) => {
 			if (e.key) {
-				try {
-					sessionStorage.setItem("notebooklm_has_keyboard", "true");
-				} catch (err) {}
+				setSessionItem(STORAGE_KEYS.KEYBOARD_DETECTED, "true");
 			}
 		};
+		window.__notebooklmKeydownHandler = recordFrontKeyboardUsage;
 		window.addEventListener("keydown", recordFrontKeyboardUsage);
 
 		// Prevent AnkiMobile from auto-advancing when tapping anywhere on the card,
@@ -185,6 +283,11 @@
 		 */
 		function cleanMath(str) {
 			if (!str) return "";
+			if (typeof str !== "string") str = String(str);
+			// Performance optimization: skip 6 regex operations if string contains no math delimiters or backticks
+			if (!str.includes("$") && !str.includes("`")) {
+				return str;
+			}
 			// Convert Block Math: $$ ... $$ -> \[ ... \]
 			let s = str.replace(/\$\$(.*?)\$\$/gs, "\\[$1\\]");
 			// Convert Inline Math: $ ... $ -> \( ... \)
@@ -468,12 +571,17 @@
 
 		try {
 			// --- 3. PROCESS QUESTION, MEDIA & HINT ---
-			const qRaw = document.getElementById("d-question").innerHTML;
-			const hRaw = document.getElementById("d-hint").innerHTML;
+			const qRawEl = document.getElementById("d-question");
+			const qRaw = qRawEl ? qRawEl.innerHTML : "";
+			const hRawEl = document.getElementById("d-hint");
+			const hRaw = hRawEl ? hRawEl.innerHTML : "";
 			const dImage = document.getElementById("d-image");
 			const imgRaw = dImage ? dImage.innerHTML.trim() : "";
 
-			document.getElementById("q-text").innerHTML = cleanMath(qRaw);
+			const qTextEl = document.getElementById("q-text");
+			if (qTextEl) {
+				qTextEl.innerHTML = cleanMath(qRaw);
+			}
 
 			// Render inline image if present
 			const mediaBox = document.getElementById("q-media");
@@ -532,19 +640,16 @@
 
 			// Render hint
 			const hBox = document.getElementById("hint-content");
-			if (hRaw.trim()) {
+			if (hBox && hRaw.trim()) {
 				hBox.innerHTML = cleanMath(hRaw);
 			} else {
 				const hBtn = document.getElementById("hint-toggle");
 				if (hBtn) hBtn.classList.add("is-hidden");
 			}
 
-			const qRawForId = document.getElementById("d-question").innerHTML;
-			const cardId = qRawForId
-				.substring(0, 50)
-				.replace(/[^a-zA-Z0-9]/g, "");
+			const cardId = getCardId(qRaw);
 
-			// Determine Question Type
+			// Determine Question Type with whitelisted types and auto-detection fallback
 			const rawType = (
 				document.getElementById("d-qtype")?.textContent || ""
 			)
@@ -560,21 +665,21 @@
 			});
 
 			let questionType = rawType;
-			if (!questionType) {
+			if (!QUESTION_TYPES.KNOWN_TYPES.includes(questionType)) {
 				const correctCount = validItems.filter((i) => {
 					const f = (i.dataset.flag || "").trim().toLowerCase();
 					return f === "true" || f === "yes" || f === "1";
 				}).length;
 				if (correctCount > 1) {
-					questionType = "MULTIPLE_SELECT";
+					questionType = QUESTION_TYPES.MULTIPLE_SELECT;
 				} else if (validItems.length > 0) {
-					questionType = "MULTIPLE_CHOICE";
+					questionType = QUESTION_TYPES.MULTIPLE_CHOICE;
 				} else if (
 					document.getElementById("d-target")?.textContent.trim()
 				) {
-					questionType = "FILL_IN_THE_BLANK";
+					questionType = QUESTION_TYPES.FILL_IN_THE_BLANK;
 				} else {
-					questionType = "SHORT_ANSWER";
+					questionType = QUESTION_TYPES.SHORT_ANSWER;
 				}
 			}
 
@@ -611,12 +716,10 @@
 					];
 				}
 
-				try {
-					sessionStorage.setItem(
-						"notebooklm_shuffle_" + cardId,
-						JSON.stringify(validItems.map((i) => i.dataset.opt)),
-					);
-				} catch (e) {}
+				setSessionItem(
+					STORAGE_KEYS.SHUFFLE + cardId,
+					JSON.stringify(validItems.map((i) => i.dataset.opt)),
+				);
 
 				const selectedOpts = new Set();
 
@@ -647,6 +750,8 @@
 					btn.type = "button";
 					btn.className = "ms-option-btn tappable";
 					btn.setAttribute("onclick", "void(0)");
+					btn.setAttribute("role", "checkbox");
+					btn.setAttribute("aria-checked", "false");
 					btn.dataset.opt = originalLetter;
 
 					btn.innerHTML = `
@@ -666,16 +771,16 @@
 						if (selectedOpts.has(originalLetter)) {
 							selectedOpts.delete(originalLetter);
 							btn.classList.remove("is-selected");
+							btn.setAttribute("aria-checked", "false");
 						} else {
 							selectedOpts.add(originalLetter);
 							btn.classList.add("is-selected");
+							btn.setAttribute("aria-checked", "true");
 						}
-						try {
-							sessionStorage.setItem(
-								"notebooklm_ms_sel_" + cardId,
-								JSON.stringify(Array.from(selectedOpts)),
-							);
-						} catch (err) {}
+						setSessionItem(
+							STORAGE_KEYS.MS_SELECTION + cardId,
+							JSON.stringify(Array.from(selectedOpts)),
+						);
 						updateSubmitState();
 					};
 
@@ -698,7 +803,7 @@
 						}
 						if (e.type === "click") {
 							// Suppress ghost click fired shortly after touchstart
-							if (Date.now() - lastTouchTime < 400) {
+							if (Date.now() - lastTouchTime < TIMING.GHOST_CLICK_WINDOW_MS) {
 								if (e.cancelable) e.preventDefault();
 								e.stopPropagation();
 								return;
@@ -730,16 +835,14 @@
 						submitBtn.classList.add("btn-shake");
 						setTimeout(() => {
 							submitBtn.classList.remove("btn-shake");
-						}, 500);
+						}, TIMING.SHAKE_ANIMATION_MS);
 						return;
 					}
 
-					try {
-						sessionStorage.setItem(
-							"notebooklm_ms_sel_" + cardId,
-							JSON.stringify(Array.from(selectedOpts)),
-						);
-					} catch (err) {}
+					setSessionItem(
+						STORAGE_KEYS.MS_SELECTION + cardId,
+						JSON.stringify(Array.from(selectedOpts)),
+					);
 
 					window.__notebooklmAllowHostFlip = true;
 					submitBtn.textContent = "✓ Checked — Tap to Reveal";
@@ -798,12 +901,7 @@
 					const val = inputEl.value.trim();
 
 					// 1. Persist to sessionStorage for the Back template
-					try {
-						sessionStorage.setItem(
-							"notebooklm_typed_" + cardId,
-							val,
-						);
-					} catch (err) {}
+					setSessionItem(STORAGE_KEYS.FITB_TYPED + cardId, val);
 
 					// 2. Dismiss mobile virtual keyboard
 					inputEl.blur();
@@ -812,7 +910,7 @@
 					const typedNorm = normalizeBlank(val);
 					const targetNorm = normalizeBlank(targetAnswer);
 					const acceptedList = rawAcceptable
-						? rawAcceptable.split(",").map((s) => normalizeBlank(s))
+						? rawAcceptable.split(",").map(normalizeBlank).filter((s) => s.length > 0)
 						: [];
 					const isSkipped = typedNorm.length === 0;
 					const isCorrect =
@@ -852,7 +950,7 @@
 							</div>
 							<div class="answer-row">
 								<span class="answer-label">Your answer:</span>
-								<span class="answer-value">${val || "<i>(No response entered)</i>"}</span>
+								<span class="answer-value user-answer-text"></span>
 							</div>
 							${
 								!isCorrect && targetAnswer
@@ -874,6 +972,19 @@
 								: ""
 						}
 					`;
+
+					// Native .textContent assignment eliminates HTML injection and angle-bracket swallowing
+					const userAnsEl = feedbackBox.querySelector(".user-answer-text");
+					if (userAnsEl) {
+						if (val) {
+							userAnsEl.textContent = val;
+						} else {
+							const emptyNotice = document.createElement("i");
+							emptyNotice.textContent = "(No response entered)";
+							userAnsEl.appendChild(emptyNotice);
+						}
+					}
+
 					feedbackBox.classList.remove("is-hidden");
 					triggerMath(feedbackBox);
 
@@ -898,12 +1009,10 @@
 				};
 
 				inputEl.addEventListener("input", () => {
-					try {
-						sessionStorage.setItem(
-							"notebooklm_typed_" + cardId,
-							inputEl.value.trim(),
-						);
-					} catch (err) {}
+					setSessionItem(
+						STORAGE_KEYS.FITB_TYPED + cardId,
+						inputEl.value.trim(),
+					);
 				});
 
 				formEl.addEventListener("submit", doSubmit);
@@ -918,7 +1027,7 @@
 				submitBtn.addEventListener("click", doSubmit);
 				bindKeyboardScrollAlignment(inputEl);
 				// Auto-focus input on desktop without letting the browser scroll it into view
-				setTimeout(() => inputEl.focus({ preventScroll: true }), 150);
+				setTimeout(() => inputEl.focus({ preventScroll: true }), TIMING.FITB_FOCUS_DELAY_MS);
 			} else if (questionType === "SHORT_ANSWER") {
 				// SHORT ANSWER: Optional scratchpad + Reveal button
 				interactiveArea.innerHTML = `
@@ -934,12 +1043,10 @@
 				bindKeyboardScrollAlignment(scratchEl);
 
 				scratchEl.addEventListener("input", () => {
-					try {
-						sessionStorage.setItem(
-							"notebooklm_sa_scratch_" + cardId,
-							scratchEl.value.trim(),
-						);
-					} catch (err) {}
+					setSessionItem(
+						STORAGE_KEYS.SA_SCRATCH + cardId,
+						scratchEl.value.trim(),
+					);
 				});
 
 				/**
@@ -951,12 +1058,10 @@
 				const submitShortAnswer = (e) => {
 					if (e && e.cancelable) e.preventDefault();
 					const val = scratchEl.value.trim();
-					try {
-						sessionStorage.setItem(
-							"notebooklm_sa_scratch_" + cardId,
-							val,
-						);
-					} catch (err) {}
+					setSessionItem(
+						STORAGE_KEYS.SA_SCRATCH + cardId,
+						val,
+					);
 					scratchEl.blur();
 					submitBtn.textContent = "✓ Revealed — Tap to View";
 					flipToBack();
@@ -980,12 +1085,10 @@
 					];
 				}
 
-				try {
-					sessionStorage.setItem(
-						"notebooklm_shuffle_" + cardId,
-						JSON.stringify(validItems.map((i) => i.dataset.opt)),
-					);
-				} catch (e) {}
+				setSessionItem(
+					STORAGE_KEYS.SHUFFLE + cardId,
+					JSON.stringify(validItems.map((i) => i.dataset.opt)),
+				);
 
 				validItems.forEach((item, index) => {
 					const originalLetter = item.dataset.opt;
@@ -1004,6 +1107,8 @@
 
 					const btn = document.createElement("div");
 					btn.className = "option-block mc-option-btn";
+					btn.setAttribute("role", "button");
+					btn.setAttribute("tabindex", "0");
 
 					btn.innerHTML = `
 						<div class="option-content">
@@ -1018,16 +1123,14 @@
 					 * @returns {void}
 					 */
 					const saveState = () => {
-						try {
-							sessionStorage.setItem(
-								"notebooklm_sel_opt_" + cardId,
-								originalLetter,
-							);
-							sessionStorage.setItem(
-								"notebooklm_sel_corr_" + cardId,
-								isCorrect ? "true" : "false",
-							);
-						} catch (e) {}
+						setSessionItem(
+							STORAGE_KEYS.MC_SELECTED + cardId,
+							originalLetter,
+						);
+						setSessionItem(
+							STORAGE_KEYS.MC_CORRECT + cardId,
+							isCorrect ? "true" : "false",
+						);
 					};
 
 					btn.addEventListener("touchstart", saveState, {
@@ -1035,6 +1138,13 @@
 					});
 					btn.addEventListener("mousedown", saveState, {
 						passive: true,
+					});
+					btn.addEventListener("keydown", (evt) => {
+						if (evt.key === "Enter" || evt.key === " ") {
+							evt.preventDefault();
+							saveState();
+							flipToBack();
+						}
 					});
 					btn.addEventListener("click", (e) => {
 						saveState();
@@ -1060,7 +1170,7 @@
 			}
 
 			// FORCE RENDER MATH
-			setTimeout(() => triggerMath(document.body), 100);
+			setTimeout(() => triggerMath(document.body), TIMING.MATHJAX_RENDER_DELAY_MS);
 		} catch (e) {
 			console.log("Template Error:", e);
 		}
