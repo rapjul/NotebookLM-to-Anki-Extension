@@ -95,8 +95,6 @@
 .notebooklm-to-anki-btn-ready {
   opacity: 1;
   cursor: pointer;
-  border-color: rgb(55, 56, 59);
-  color: #e3e3e3;
 }
 
 .notebooklm-to-anki-btn-success {
