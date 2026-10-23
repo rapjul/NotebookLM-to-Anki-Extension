@@ -759,13 +759,17 @@ test("templates: back.html continue button multi-platform grading and mobile tap
 		"back.html should gate short answer action buttons to desktop platforms only",
 	);
 	assert.ok(
-		backHtml.includes('"✓ Correct (Good)"') &&
-			backHtml.includes('"✕ Incorrect (Again)"'),
-		"back.html should render top-level score pill above choices for single-choice multiple choice",
+		backHtml.includes("function bindScorePillGrading(") &&
+			backHtml.includes('id="back-score-pill"'),
+		"back.html should define bindScorePillGrading and render interactive score pills with #back-score-pill",
 	);
 	assert.ok(
-		backHtml.includes('${correctSelected}/${totalCorrect} Correct ${isFullyCorrect ? "(Good)" : "(Again)"}'),
-		"back.html should render top-level score pill with rating intent for multi-select questions",
+		backHtml.includes("${statusIcon} <span>${statusLabel} · ${ratingTag}</span>"),
+		"back.html should render unified interactive score pill with SVG icon, rating, and shortcut tags for single-choice and fitb",
+	);
+	assert.ok(
+		backHtml.includes("${statusIcon} <span>${correctSelected}/${totalCorrect} Correct · ${ratingTag}</span>"),
+		"back.html should render unified interactive score pill with SVG icon, rating, and shortcut tags for multi-select",
 	);
 
 	// Touch and click handling
@@ -776,6 +780,22 @@ test("templates: back.html continue button multi-platform grading and mobile tap
 	);
 
 	// Styling rules
+	assert.ok(
+		cssContent.includes(".score-pill-container {\n  display: flex;\n  justify-content: center;"),
+		"styling.css .score-pill-container should center score pills horizontally",
+	);
+	assert.ok(
+		cssContent.includes(".score-pill .status-icon {\n  width: 16px;\n  height: 16px;\n  min-width: 16px;\n}"),
+		"styling.css .score-pill .status-icon should specify 16px dimensions for crisp vector rendering",
+	);
+	assert.ok(
+		cssContent.includes(".pill-correct {\n  background-color: var(--bg-correct-subtle);\n  color: var(--text-primary);"),
+		"styling.css .pill-correct should use high-contrast var(--text-primary) for WCAG AAA a11y compliance",
+	);
+	assert.ok(
+		cssContent.includes(".pill-wrong {\n  background-color: var(--bg-wrong-subtle);\n  color: var(--text-primary);"),
+		"styling.css .pill-wrong should use high-contrast var(--text-primary) for WCAG AAA a11y compliance",
+	);
 	assert.ok(
 		cssContent.includes("touch-action: manipulation;"),
 		"styling.css .continue-btn should specify touch-action: manipulation to eliminate 300ms tap delay",

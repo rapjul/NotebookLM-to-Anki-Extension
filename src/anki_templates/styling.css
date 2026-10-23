@@ -350,6 +350,12 @@ body {
   min-width: 20px;
 }
 
+.score-pill .status-icon {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+}
+
 .status-icon-correct {
   fill: var(--color-correct);
 }
@@ -413,28 +419,58 @@ body {
 
 /* Score Pills */
 .score-pill-container {
+  display: flex;
+  justify-content: center;
   margin-bottom: 20px;
 }
 
 .score-pill {
-  display: inline-block;
-  padding: 6px 14px;
-  border-radius: 16px;
-  font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: 0.3px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  touch-action: manipulation;
+  user-select: none;
+  background: transparent;
+  transition:
+    filter var(--transition-fast),
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    transform 0.1s ease;
+}
+
+.score-pill:hover {
+  filter: brightness(1.15);
+}
+
+.score-pill:active {
+  transform: scale(0.98);
 }
 
 .pill-correct {
   background-color: var(--bg-correct-subtle);
-  color: var(--color-correct);
+  color: var(--text-primary);
   border: 1px solid var(--border-correct-subtle);
 }
 
 .pill-wrong {
   background-color: var(--bg-wrong-subtle);
-  color: var(--color-wrong);
+  color: var(--text-primary);
   border: 1px solid var(--border-wrong-subtle);
+}
+
+.pill-skipped {
+  background-color: var(--bg-skipped);
+  color: var(--text-primary);
+  border: 1px solid var(--color-skipped);
 }
 
 /* User Selection Badges */
@@ -1175,6 +1211,7 @@ body {
 .mode-centered .sa-scratchpad,
 .mode-centered .hint-btn,
 .mode-centered .submit-btn,
+.mode-centered .score-pill,
 .mode-centered .continue-btn,
 .mode-centered .tappable,
 .mode-centered #action-container,

@@ -316,7 +316,6 @@
 
 		/**
 		 * Determines whether the card is being rendered on a mobile client.
-		 *
 		 * Checks for AnkiMobile (iPhone/iPad), AnkiDroid, and mobile browser characteristics.
 		 *
 		 * Explicitly returns false for Anki Desktop via pycmd and desktop root classes.
@@ -626,6 +625,42 @@
 			actionContainer.appendChild(continueBtn);
 		}
 
+		/**
+		 * Binds tap and click event listeners to an interactive score pill to dispatch grading.
+		 *
+		 * Suppresses rapid ghost clicks within the defined timing window.
+		 *
+		 * @param {HTMLElement|null} pillEl - Score pill button element.
+		 * @param {boolean} isCorrect - True for Good (ease3), false for Again (ease1).
+		 * @returns {void}
+		 */
+		function bindScorePillGrading(pillEl, isCorrect) {
+			if (!pillEl) return;
+			let lastActionTime = 0;
+
+			/**
+			 * Event handler for score pill grading interaction.
+			 *
+			 * @param {Event} e - Click or touch event.
+			 * @returns {void}
+			 */
+			const handlePillAction = (e) => {
+				const now = Date.now();
+				if (now - lastActionTime < TIMING.GHOST_CLICK_WINDOW_MS) {
+					if (e.cancelable) e.preventDefault();
+					e.stopPropagation();
+					return;
+				}
+				lastActionTime = now;
+				e.stopPropagation();
+				gradeCard(isCorrect);
+			};
+
+			pillEl.onclick = handlePillAction;
+			pillEl.addEventListener("touchend", handlePillAction);
+			pillEl.addEventListener("click", handlePillAction);
+		}
+
 		// SVG Evaluation Status Icons
 		// Material Design 'check' icon: https://fonts.google.com/icons?selected=Material+Symbols+Outlined:check
 		const iconCheck = `<svg class="status-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
@@ -915,15 +950,25 @@
 					correctSelected === totalCorrect &&
 					wrongSelected === 0;
 
-				const pillText = hasInteraction
-					? `${correctSelected}/${totalCorrect} Correct ${isFullyCorrect ? "(Good)" : "(Again)"}`
-					: `Select all that apply (${totalCorrect} correct)`;
+				const showHints = shouldShowKeyboardHints();
+				const ratingTag = isFullyCorrect
+					? showHints
+						? "Good [Space / 3]"
+						: "Good"
+					: showHints
+						? "Again [1]"
+						: "Again";
+
+				const statusIcon = isFullyCorrect ? iconCheck : iconClose;
+				const pillContent = hasInteraction
+					? `${statusIcon} <span>${correctSelected}/${totalCorrect} Correct · ${ratingTag}</span>`
+					: `<span>Select all that apply (${totalCorrect} correct)</span>`;
 
 				const pillHtml = `
 					<div class="score-pill-container">
-						<div class="score-pill ${isFullyCorrect || !hasInteraction ? "pill-correct" : "pill-wrong"}">
-							${pillText}
-						</div>
+						<button type="button" class="score-pill ${isFullyCorrect || !hasInteraction ? "pill-correct" : "pill-wrong"} tappable" id="back-score-pill">
+							${pillContent}
+						</button>
 					</div>
 				`;
 
@@ -1012,7 +1057,12 @@
 					container.appendChild(block);
 				});
 
-				renderContinueButton(isFullyCorrect);
+				if (hasInteraction) {
+					bindScorePillGrading(
+						document.getElementById("back-score-pill"),
+						isFullyCorrect,
+					);
+				}
 			} else if (questionType === "FILL_IN_THE_BLANK") {
 				// --- FILL IN THE BLANK FEEDBACK ---
 				let typed = "";
@@ -1059,6 +1109,39 @@
 						? "Skipped"
 						: "Not quite";
 
+				const showHints = shouldShowKeyboardHints();
+				const ratingTag = isCorrect
+					? showHints
+						? "Good [Space / 3]"
+						: "Good"
+					: showHints
+						? "Again [1]"
+						: "Again";
+				const pillClass = isCorrect
+					? "pill-correct"
+					: isSkipped
+						? "pill-skipped"
+						: "pill-wrong";
+				const statusIcon = isCorrect
+					? iconCheck
+					: isSkipped
+						? iconSkip
+						: iconClose;
+				const statusLabel = isCorrect
+					? "Correct"
+					: isSkipped
+						? "Skipped"
+						: "Incorrect";
+				const pillContent = `${statusIcon} <span>${statusLabel} · ${ratingTag}</span>`;
+
+				const pillHtml = `
+					<div class="score-pill-container">
+						<button type="button" class="score-pill ${pillClass} tappable" id="back-score-pill">
+							${pillContent}
+						</button>
+					</div>
+				`;
+
 				const feedbackCard = `
 					<div class="feedback-card ${cardClass}">
 						<div class="feedback-header">
@@ -1091,7 +1174,7 @@
 				`
 					: "";
 
-				interactiveArea.innerHTML = feedbackCard + rationaleCard;
+				interactiveArea.innerHTML = pillHtml + feedbackCard + rationaleCard;
 
 				// Native .textContent assignment eliminates HTML injection and angle-bracket swallowing
 				const userAnsEl = interactiveArea.querySelector(".user-answer-text");
@@ -1105,10 +1188,9 @@
 					}
 				}
 
-				renderContinueButton(
+				bindScorePillGrading(
+					document.getElementById("back-score-pill"),
 					isCorrect,
-					null,
-					isSkipped,
 				);
 			} else if (questionType === "SHORT_ANSWER") {
 				// --- SHORT ANSWER FEEDBACK ---
@@ -1364,14 +1446,22 @@
 				if (selectedCorrect !== null) {
 					const isCorrect = selectedCorrect === "true";
 					const pillClass = isCorrect ? "pill-correct" : "pill-wrong";
-					const pillText = isCorrect
-						? "✓ Correct (Good)"
-						: "✕ Incorrect (Again)";
+					const showHints = shouldShowKeyboardHints();
+					const ratingTag = isCorrect
+						? showHints
+							? "Good [Space / 3]"
+							: "Good"
+						: showHints
+							? "Again [1]"
+							: "Again";
+					const statusIcon = isCorrect ? iconCheck : iconClose;
+					const statusLabel = isCorrect ? "Correct" : "Incorrect";
+					const pillContent = `${statusIcon} <span>${statusLabel} · ${ratingTag}</span>`;
 					pillHtml = `
 						<div class="score-pill-container">
-							<div class="score-pill ${pillClass}">
-								${pillText}
-							</div>
+							<button type="button" class="score-pill ${pillClass} tappable" id="back-score-pill">
+								${pillContent}
+							</button>
 						</div>
 					`;
 				}
@@ -1460,7 +1550,10 @@
 				});
 
 				if (selectedCorrect !== null) {
-					renderContinueButton(selectedCorrect === "true");
+					bindScorePillGrading(
+						document.getElementById("back-score-pill"),
+						selectedCorrect === "true",
+					);
 				}
 			}
 
