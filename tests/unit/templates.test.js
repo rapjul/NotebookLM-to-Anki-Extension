@@ -741,6 +741,16 @@ test("templates: back.html continue button multi-platform grading and mobile tap
 
 	// Mobile gating and top grade banner
 	assert.ok(
+		backHtml.includes("if (typeof pycmd !== \"undefined\") {\n\t\t\t\treturn false;\n\t\t\t}"),
+		"back.html isMobilePlatform should bypass mobile mode when pycmd is defined on Anki Desktop",
+	);
+	assert.ok(
+		backHtml.includes('rootClassList.contains("isMac")') &&
+			backHtml.includes('rootClassList.contains("isWin")') &&
+			backHtml.includes('rootClassList.contains("isLin")'),
+		"back.html isMobilePlatform should check desktop OS classes on root elements",
+	);
+	assert.ok(
 		backHtml.includes("if (isMobilePlatform()) {\n\t\t\t\treturn;\n\t\t\t}"),
 		"back.html renderContinueButton should return early on mobile to let users rely on native AnkiMobile buttons",
 	);

@@ -316,13 +316,38 @@
 
 		/**
 		 * Determines whether the card is being rendered on a mobile client.
+		 *
 		 * Checks for AnkiMobile (iPhone/iPad), AnkiDroid, and mobile browser characteristics.
+		 *
+		 * Explicitly returns false for Anki Desktop via pycmd and desktop root classes.
 		 *
 		 * @returns {boolean} True if running on AnkiMobile, AnkiDroid, or mobile browser.
 		 */
 		function isMobilePlatform() {
+			// 1. Explicit Anki Desktop guards (pycmd bridge and desktop OS root classes)
+			if (typeof pycmd !== "undefined") {
+				return false;
+			}
+
 			const rootClassList = document.documentElement.classList;
 			const bodyClassList = document.body ? document.body.classList : null;
+
+			const hasDesktopClass =
+				rootClassList.contains("isMac") ||
+				rootClassList.contains("isWin") ||
+				rootClassList.contains("isLin") ||
+				Boolean(
+					bodyClassList &&
+						(bodyClassList.contains("isMac") ||
+							bodyClassList.contains("isWin") ||
+							bodyClassList.contains("isLin")),
+				);
+
+			if (hasDesktopClass) {
+				return false;
+			}
+
+			// 2. Mobile platform detection
 			const hasMobileClass =
 				rootClassList.contains("mobile") ||
 				rootClassList.contains("ipad") ||
@@ -352,12 +377,10 @@
 			);
 
 			const isTouchScreen = Boolean(
-				(typeof navigator !== "undefined" &&
+				typeof navigator !== "undefined" &&
 					navigator.maxTouchPoints > 1 &&
 					(navigator.platform === "MacIntel" ||
-						/Macintosh/i.test(navigator.userAgent))) ||
-					(typeof window !== "undefined" &&
-						typeof window.orientation !== "undefined"),
+						/Macintosh/i.test(navigator.userAgent)),
 			);
 
 			const isMobileUserAgent =
