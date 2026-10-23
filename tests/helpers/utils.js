@@ -116,3 +116,31 @@ export const findMatchingDomImage =
  */
 export const filterDuplicateNotes =
 	globalThis.NotebookLMToAnkiUtils.filterDuplicateNotes;
+
+/**
+ * Re-exported DEFAULT_ANKI_CONNECT_URL constant.
+ * @type {string}
+ */
+export const DEFAULT_ANKI_CONNECT_URL =
+	globalThis.NotebookLMToAnkiUtils.DEFAULT_ANKI_CONNECT_URL;
+
+/**
+ * Re-exported ANKI_CONNECT_VERSION constant.
+ * @type {number}
+ */
+export const ANKI_CONNECT_VERSION =
+	globalThis.NotebookLMToAnkiUtils.ANKI_CONNECT_VERSION;
+
+/**
+ * Re-exported invokeAnkiConnect utility.
+ * @type {function(string, Record<string, any>=, { ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }=): Promise<any>}
+ */
+export const invokeAnkiConnect =
+	globalThis.NotebookLMToAnkiUtils.invokeAnkiConnect;
+
+/**
+ * Re-exported queryAnkiConnect utility.
+ * @type {function(string, Record<string, any>=, { ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }=): Promise<any>}
+ */
+export const queryAnkiConnect =
+	globalThis.NotebookLMToAnkiUtils.queryAnkiConnect;

@@ -89,15 +89,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 				"[Anki Background] 🔍 Checking AnkiConnect status at http://127.0.0.1:8765...",
 			);
 			try {
-				const response = await fetch("http://127.0.0.1:8765", {
-					method: "POST",
-					body: JSON.stringify({ action: "version", version: 6 }),
-				});
-				console.log(
-					"[Anki Background] 📥 checkAnkiStatus HTTP response status:",
-					response.status,
-				);
-				const data = await response.json();
+				const data =
+					await NotebookLMToAnkiUtils.invokeAnkiConnect("version");
 				console.log(
 					"[Anki Background] 📥 checkAnkiStatus data response:",
 					data,
@@ -125,15 +118,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 				request.deckName,
 			);
 			try {
-				const response = await fetch("http://127.0.0.1:8765", {
-					method: "POST",
-					body: JSON.stringify({ action: "deckNames", version: 6 }),
-				});
-				console.log(
-					"[Anki Background] 📥 checkDeckExists HTTP response status:",
-					response.status,
-				);
-				const data = await response.json();
+				const data =
+					await NotebookLMToAnkiUtils.invokeAnkiConnect("deckNames");
 				console.log(
 					"[Anki Background] 📥 checkDeckExists deckNames retrieved:",
 					data,
@@ -366,19 +352,14 @@ function detectImageFormatFromBuffer(buffer) {
  * @returns {Promise<boolean>} True if storage succeeded, false otherwise.
  */
 async function storeMediaToAnki(filename, base64Data, idx, mediaLogs) {
-	const storeRes = await fetch("http://127.0.0.1:8765", {
-		method: "POST",
-		body: JSON.stringify({
-			action: "storeMediaFile",
-			version: 6,
-			params: {
-				filename,
-				data: base64Data,
-			},
-		}),
-	});
+	const storeData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"storeMediaFile",
+		{
+			filename,
+			data: base64Data,
+		},
+	);
 
-	const storeData = await storeRes.json();
 	if (storeData.error) {
 		console.warn(
 			"[Anki Background] storeMediaFile returned error:",
@@ -621,15 +602,10 @@ async function prepareTargetDeck(targetDeck, duplicateAction) {
 			"[Anki Background] ⚠️ Overwrite requested. Deleting deck:",
 			targetDeck,
 		);
-		const delRes = await fetch("http://127.0.0.1:8765", {
-			method: "POST",
-			body: JSON.stringify({
-				action: "deleteDecks",
-				version: 6,
-				params: { decks: [targetDeck], cardsToo: true },
-			}),
-		});
-		const delData = await delRes.json();
+		const delData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+			"deleteDecks",
+			{ decks: [targetDeck], cardsToo: true },
+		);
 		console.log(
 			"[Anki Background] 🗑️ Deck deletion response payload:",
 			delData,
@@ -641,15 +617,10 @@ async function prepareTargetDeck(targetDeck, duplicateAction) {
 		"[Anki Background] 📦 Creating deck (or verifying):",
 		targetDeck,
 	);
-	const deckRes = await fetch("http://127.0.0.1:8765", {
-		method: "POST",
-		body: JSON.stringify({
-			action: "createDeck",
-			version: 6,
-			params: { deck: targetDeck },
-		}),
-	});
-	const deckData = await deckRes.json();
+	const deckData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"createDeck",
+		{ deck: targetDeck },
+	);
 	if (deckData.error) {
 		throw new Error(deckData.error);
 	}
@@ -667,31 +638,21 @@ async function deduplicateMergeNotes(targetDeck, notes) {
 		"[Anki Background] 🔍 Fetching existing notes in target deck to perform local duplicate check...",
 	);
 	try {
-		const findRes = await fetch("http://127.0.0.1:8765", {
-			method: "POST",
-			body: JSON.stringify({
-				action: "findNotes",
-				version: 6,
-				params: {
-					query: `deck:"${targetDeck}"`,
-				},
-			}),
-		});
-		const findResult = await findRes.json();
+		const findResult = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+			"findNotes",
+			{
+				query: `deck:"${targetDeck}"`,
+			},
+		);
 		const noteIds = findResult.result || [];
 
 		if (noteIds.length > 0) {
-			const infoRes = await fetch("http://127.0.0.1:8765", {
-				method: "POST",
-				body: JSON.stringify({
-					action: "notesInfo",
-					version: 6,
-					params: {
-						notes: noteIds,
-					},
-				}),
-			});
-			const infoResult = await infoRes.json();
+			const infoResult = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+				"notesInfo",
+				{
+					notes: noteIds,
+				},
+			);
 			const existingQuestions = new Set();
 			if (infoResult.result && Array.isArray(infoResult.result)) {
 				infoResult.result.forEach((note) => {
@@ -856,15 +817,10 @@ async function handleSendBatchToAnki(request, sendResponse) {
 			"Count:",
 			finalNotesToSend.length,
 		);
-		const addRes = await fetch("http://127.0.0.1:8765", {
-			method: "POST",
-			body: JSON.stringify({
-				action: "addNotes",
-				version: 6,
-				params: { notes: finalNotesToSend },
-			}),
-		});
-		const addData = await addRes.json();
+		const addData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+			"addNotes",
+			{ notes: finalNotesToSend },
+		);
 
 		if (addData.error) {
 			console.error(
@@ -928,11 +884,7 @@ async function ensureNotebookLMModelExists() {
 	);
 
 	// 1. Fetch available note types (models) from Anki
-	const response = await fetch("http://127.0.0.1:8765", {
-		method: "POST",
-		body: JSON.stringify({ action: "modelNames", version: 6 }),
-	});
-	const data = await response.json();
+	const data = await NotebookLMToAnkiUtils.invokeAnkiConnect("modelNames");
 	if (data.error) {
 		console.error(
 			"[Anki Background] ❌ modelNames fetch failed:",
@@ -974,15 +926,11 @@ async function ensureNotebookLMModelExists() {
 		);
 
 		try {
-			const fieldRes = await fetch("http://127.0.0.1:8765", {
-				method: "POST",
-				body: JSON.stringify({
-					action: "modelFieldNames",
-					version: 6,
-					params: { modelName: NOTE_TYPE },
-				}),
-			});
-			const fieldData = await fieldRes.json();
+			const fieldData =
+				await NotebookLMToAnkiUtils.invokeAnkiConnect(
+					"modelFieldNames",
+					{ modelName: NOTE_TYPE },
+				);
 
 			if (fieldData.result && Array.isArray(fieldData.result)) {
 				let existingFields = [...fieldData.result];
@@ -995,19 +943,15 @@ async function ensureNotebookLMModelExists() {
 					console.log(
 						"[Anki Background] 🔄 Renaming field 'ArchDiagram' to 'Image' in model...",
 					);
-					const renameRes = await fetch("http://127.0.0.1:8765", {
-						method: "POST",
-						body: JSON.stringify({
-							action: "modelFieldRename",
-							version: 6,
-							params: {
+					const renameData =
+						await NotebookLMToAnkiUtils.invokeAnkiConnect(
+							"modelFieldRename",
+							{
 								modelName: NOTE_TYPE,
 								oldFieldName: "ArchDiagram",
 								newFieldName: "Image",
 							},
-						}),
-					});
-					const renameData = await renameRes.json();
+						);
 					if (!renameData.error) {
 						existingFields = existingFields.map((f) =>
 							f === "ArchDiagram" ? "Image" : f,
@@ -1024,29 +968,23 @@ async function ensureNotebookLMModelExists() {
 					console.log(
 						`[Anki Background] ➕ Adding missing field '${fieldName}' to model...`,
 					);
-					await fetch("http://127.0.0.1:8765", {
-						method: "POST",
-						body: JSON.stringify({
-							action: "modelFieldAdd",
-							version: 6,
-							params: {
-								modelName: NOTE_TYPE,
-								fieldName,
-							},
-						}),
-					});
+					await NotebookLMToAnkiUtils.invokeAnkiConnect(
+						"modelFieldAdd",
+						{
+							modelName: NOTE_TYPE,
+							fieldName,
+						},
+					);
 				}
 			}
 
 			// Update templates and styling
 			const [frontHtml, backHtml, stylingCss] =
 				await loadLocalTemplates();
-			const tmplRes = await fetch("http://127.0.0.1:8765", {
-				method: "POST",
-				body: JSON.stringify({
-					action: "updateModelTemplates",
-					version: 6,
-					params: {
+			const tmplData =
+				await NotebookLMToAnkiUtils.invokeAnkiConnect(
+					"updateModelTemplates",
+					{
 						model: {
 							name: NOTE_TYPE,
 							templates: {
@@ -1057,9 +995,7 @@ async function ensureNotebookLMModelExists() {
 							},
 						},
 					},
-				}),
-			});
-			const tmplData = await tmplRes.json();
+				);
 			if (tmplData.error) {
 				console.warn(
 					"[Anki Background] ⚠️ updateModelTemplates error:",
@@ -1067,20 +1003,16 @@ async function ensureNotebookLMModelExists() {
 				);
 			}
 
-			const styleRes = await fetch("http://127.0.0.1:8765", {
-				method: "POST",
-				body: JSON.stringify({
-					action: "updateModelStyling",
-					version: 6,
-					params: {
+			const styleData =
+				await NotebookLMToAnkiUtils.invokeAnkiConnect(
+					"updateModelStyling",
+					{
 						model: {
 							name: NOTE_TYPE,
 							css: stylingCss,
 						},
 					},
-				}),
-			});
-			const styleData = await styleRes.json();
+				);
 			if (styleData.error) {
 				console.warn(
 					"[Anki Background] ⚠️ updateModelStyling error:",
@@ -1103,26 +1035,21 @@ async function ensureNotebookLMModelExists() {
 
 	const [frontHtml, backHtml, stylingCss] = await loadLocalTemplates();
 
-	const createResponse = await fetch("http://127.0.0.1:8765", {
-		method: "POST",
-		body: JSON.stringify({
-			action: "createModel",
-			version: 6,
-			params: {
-				modelName: NOTE_TYPE,
-				inOrderFields: NOTEBOOKLM_MODEL_FIELDS,
-				css: stylingCss,
-				cardTemplates: [
-					{
-						Name: "NotebookLM Quiz",
-						Front: frontHtml,
-						Back: backHtml,
-					},
-				],
-			},
-		}),
-	});
-	const createData = await createResponse.json();
+	const createData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"createModel",
+		{
+			modelName: NOTE_TYPE,
+			inOrderFields: NOTEBOOKLM_MODEL_FIELDS,
+			css: stylingCss,
+			cardTemplates: [
+				{
+					Name: "NotebookLM Quiz",
+					Front: frontHtml,
+					Back: backHtml,
+				},
+			],
+		},
+	);
 	console.log("[Anki Background] 📤 createModel response:", createData);
 	if (createData.error) {
 		throw new Error(`Failed to create note type: ${createData.error}`);

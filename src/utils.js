@@ -1249,8 +1249,93 @@
 	}
 
 	/**
+	 * Default local endpoint for the AnkiConnect HTTP service.
+	 * @type {string}
+	 */
+	const DEFAULT_ANKI_CONNECT_URL = "http://127.0.0.1:8765";
+
+	/**
+	 * Supported AnkiConnect API schema version.
+	 * @type {number}
+	 */
+	const ANKI_CONNECT_VERSION = 6;
+
+	/**
+	 * Sends a low-level JSON-RPC POST request to the AnkiConnect API and returns the parsed JSON envelope.
+	 *
+	 * Used by both the browser extension background service worker and the Node.js template CLI.
+	 *
+	 * @param {string} action - The AnkiConnect action name (e.g. 'version', 'deckNames', 'modelTemplates').
+	 * @param {Record<string, any>} [params] - Optional parameters object for the action.
+	 * @param {{ ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }} [options={}] - Optional request configuration.
+	 * @returns {Promise<any>} Parsed JSON response from AnkiConnect (typically `{ result, error }`).
+	 */
+	async function invokeAnkiConnect(action, params, options = {}) {
+		const ankiUrl = options.ankiUrl || DEFAULT_ANKI_CONNECT_URL;
+		const version = options.version ?? ANKI_CONNECT_VERSION;
+		const fetchImpl = options.fetchFn || globalThis.fetch;
+
+		/** @type {Record<string, any>} */
+		const payload = { action, version };
+		if (params !== undefined) {
+			payload.params = params;
+		}
+
+		/** @type {RequestInit} */
+		const fetchOptions = {
+			method: "POST",
+			headers: { "Content-Type": "application/json; charset=utf-8" },
+			body: JSON.stringify(payload),
+		};
+
+		if (
+			options.timeoutMs &&
+			typeof AbortSignal !== "undefined" &&
+			typeof AbortSignal.timeout === "function"
+		) {
+			fetchOptions.signal = AbortSignal.timeout(options.timeoutMs);
+		}
+
+		const response = await fetchImpl(ankiUrl, fetchOptions);
+		return response.json();
+	}
+
+	/**
+	 * Dispatches an AnkiConnect action and unwraps its `result` field, throwing descriptive errors
+	 * on network failure or API-level error responses.
+	 *
+	 * @param {string} action - The AnkiConnect action name.
+	 * @param {Record<string, any>} [params] - Optional parameters object for the action.
+	 * @param {{ ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }} [options={}] - Optional request configuration.
+	 * @returns {Promise<any>} Unwrapped `result` value from the AnkiConnect response.
+	 * @throws {Error} When AnkiConnect is unreachable or returns a non-null `error` property.
+	 */
+	async function queryAnkiConnect(action, params, options = {}) {
+		const ankiUrl = options.ankiUrl || DEFAULT_ANKI_CONNECT_URL;
+		let resJson;
+		try {
+			resJson = await invokeAnkiConnect(action, params, options);
+		} catch (err) {
+			throw new Error(
+				`Unable to connect to AnkiConnect at ${ankiUrl}. Is Anki running?`,
+				{ cause: err },
+			);
+		}
+
+		if (resJson && typeof resJson === "object" && resJson.error) {
+			throw new Error(`AnkiConnect error: ${resJson.error}`);
+		}
+
+		const hasResult =
+			resJson && typeof resJson === "object" && "result" in resJson;
+		return hasResult ? resJson.result : resJson;
+	}
+
+	/**
 	 * Shared utility functions exported by the module.
 	 * @type {{
+	 *   DEFAULT_ANKI_CONNECT_URL: string,
+	 *   ANKI_CONNECT_VERSION: number,
 	 *   unescapeHtml: function(string): string,
 	 *   cleanNotebookTitle: function((string|null|undefined)): string,
 	 *   cleanQuizTitle: function((string|null|undefined)): string,
@@ -1267,10 +1352,14 @@
 	 *   mapQuizDataToCards: function(Array<object>, Array<string>=): Array<object>,
 	 *   mapCardsToAnkiNotes: function(Array<object>, string, string=, Array<string>=): Array<object>,
 	 *   normalizeQuestionText: function((string|null|undefined)): string,
-	 *   filterDuplicateNotes: function(Array<object>, Set<string>): { notesToSend: Array<object>, skippedCount: number }
+	 *   filterDuplicateNotes: function(Array<object>, Set<string>): { notesToSend: Array<object>, skippedCount: number },
+	 *   invokeAnkiConnect: function(string, Record<string, any>=, { ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }=): Promise<any>,
+	 *   queryAnkiConnect: function(string, Record<string, any>=, { ankiUrl?: string, version?: number, timeoutMs?: number, fetchFn?: typeof fetch }=): Promise<any>
 	 * }}
 	 */
 	const utils = {
+		DEFAULT_ANKI_CONNECT_URL,
+		ANKI_CONNECT_VERSION,
 		unescapeHtml,
 		cleanNotebookTitle,
 		cleanQuizTitle,
@@ -1288,6 +1377,8 @@
 		mapCardsToAnkiNotes,
 		normalizeQuestionText,
 		filterDuplicateNotes,
+		invokeAnkiConnect,
+		queryAnkiConnect,
 	};
 
 	// Expose globally for service worker, content script, and test environments

@@ -10,6 +10,8 @@ import {
 	mapCardsToAnkiNotes,
 	filterDuplicateNotes,
 	normalizeQuestionText,
+	invokeAnkiConnect,
+	queryAnkiConnect,
 } from "../helpers/utils.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,12 +38,7 @@ function loadFixture(filename) {
  * @returns {Promise<object>} JSON response from AnkiConnect.
  */
 async function callAnkiConnect(action, params = {}, version = 6) {
-	const res = await fetch("http://127.0.0.1:8765", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ action, version, params }),
-	});
-	return res.json();
+	return invokeAnkiConnect(action, params, { version });
 }
 
 test("integration: AnkiConnect status checks", async (t) => {
@@ -78,6 +75,63 @@ test("integration: AnkiConnect status checks", async (t) => {
 					await callAnkiConnect("version");
 				},
 				{ message: /fetch failed/ },
+			);
+		},
+	);
+
+	await t.test(
+		"queryAnkiConnect returns unwrapped result on success",
+		async () => {
+			t.mock.method(globalThis, "fetch", async (_url, options) => {
+				const body = JSON.parse(options.body);
+				assert.equal(body.action, "version");
+				return {
+					ok: true,
+					status: 200,
+					json: async () => ({ result: 6, error: null }),
+				};
+			});
+
+			const result = await queryAnkiConnect("version");
+			assert.equal(result, 6);
+		},
+	);
+
+	await t.test(
+		"queryAnkiConnect throws descriptive error on API failure",
+		async () => {
+			t.mock.method(globalThis, "fetch", async () => ({
+				ok: true,
+				status: 200,
+				json: async () => ({ result: null, error: "model not found" }),
+			}));
+
+			await assert.rejects(
+				async () => {
+					await queryAnkiConnect("modelFieldNames", {
+						modelName: "Invalid",
+					});
+				},
+				{ message: /AnkiConnect error: model not found/ },
+			);
+		},
+	);
+
+	await t.test(
+		"queryAnkiConnect throws descriptive error on connection refusal",
+		async () => {
+			t.mock.method(globalThis, "fetch", async () => {
+				throw new Error("ECONNREFUSED");
+			});
+
+			await assert.rejects(
+				async () => {
+					await queryAnkiConnect("version");
+				},
+				{
+					message:
+						/Unable to connect to AnkiConnect at http:\/\/127\.0\.0\.1:8765\. Is Anki running\?/,
+				},
 			);
 		},
 	);
