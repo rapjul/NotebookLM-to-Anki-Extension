@@ -5,7 +5,7 @@ description: Synchronize NotebookLM card templates (Front, Back, and Styles) fro
 
 # Update Anki Card Templates
 
-This skill guides AI agents through inspecting, diffing, and synchronizing local card templates ([`front.html`](../../../src/anki_templates/front.html), [`back.html`](../../../src/anki_templates/back.html), and [`styling.css`](../../../src/anki_templates/styling.css)) to the **`NotebookLM Quiz`** card type in Anki using the repository CLI tool ([`./scripts/update_card_templates.py`](../../../scripts/update_card_templates.py)).
+This skill guides AI agents through inspecting, diffing, and synchronizing local card templates ([`front.html`](../../../src/anki_templates/front.html), [`back.html`](../../../src/anki_templates/back.html), and [`styling.css`](../../../src/anki_templates/styling.css)) to the **`NotebookLM Quiz`** card type in Anki using the repository CLI tool ([`./scripts/update-card-templates.js`](../../../scripts/update-card-templates.js)).
 
 ---
 
@@ -32,19 +32,23 @@ All commands are executed from the repository root:
 
 ```bash
 # 1. Preview unified diff against live Anki collection
-python3 ./scripts/update_card_templates.py diff
+npm run templates:diff
+# or: node ./scripts/update-card-templates.js diff
 
 # 2. Preview push in dry-run mode without modifying Anki
-python3 ./scripts/update_card_templates.py push -n
+node ./scripts/update-card-templates.js push -n
 
 # 3. Synchronize local templates to Anki (creates automatic backup)
-python3 ./scripts/update_card_templates.py push
+npm run templates:push
+# or: node ./scripts/update-card-templates.js push
 
 # 4. Check delimiter status and external code detection
-python3 ./scripts/update_card_templates.py status
+npm run templates:status
+# or: node ./scripts/update-card-templates.js status
 
 # 5. Pull template edits made inside Anki back into the repository
-python3 ./scripts/update_card_templates.py pull
+npm run templates:pull
+# or: node ./scripts/update-card-templates.js pull
 ```
 
 ---
@@ -55,7 +59,7 @@ python3 ./scripts/update_card_templates.py pull
 Before pushing changes, inspect the unified diff to verify that your modifications are clean and that external code blocks are recognized:
 
 ```bash
-python3 ./scripts/update_card_templates.py diff
+npm run templates:diff
 ```
 Verify that:
 - Addon template modifications appear strictly between the boundary comments:
@@ -67,7 +71,7 @@ Verify that:
 Execute the synchronization push:
 
 ```bash
-python3 ./scripts/update_card_templates.py push
+npm run templates:push
 ```
 The script will:
 1. Verify AnkiConnect connectivity (or offer to auto-launch Anki).
@@ -93,15 +97,12 @@ If AnkiConnect returns the following error:
 Confirm that the update applied cleanly and that templates are in sync:
 
 ```bash
-python3 ./scripts/update_card_templates.py diff
+npm run templates:diff
 ```
 *Expected output:* `In sync (no changes).`
 
-Run both test suites to ensure no regressions:
+Run the test suite to ensure no regressions:
 ```bash
-# Python CLI and template updater tests
-python3 -m unittest discover -s ./tests/unit -p "test_update_templates.py"
-
 # Node.js extension and template integrity tests
 npm test
 ```
