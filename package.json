@@ -14,7 +14,11 @@
     "lint:source": "web-ext lint --config .web-ext-config.cjs",
     "test": "node --test tests/**/*.test.js",
     "test:watch": "node --test --watch tests/**/*.test.js",
-    "test:coverage": "node --test --experimental-test-coverage tests/**/*.test.js"
+    "test:coverage": "node --test --experimental-test-coverage tests/**/*.test.js",
+    "templates:status": "node scripts/update-card-templates.js status",
+    "templates:diff": "node scripts/update-card-templates.js diff",
+    "templates:push": "node scripts/update-card-templates.js push",
+    "templates:pull": "node scripts/update-card-templates.js pull"
   },
   "devDependencies": {
     "acorn": "^8.18.0",

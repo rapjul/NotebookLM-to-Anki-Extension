@@ -38,6 +38,7 @@ const AUDIT_FILES = [
 	"src/utils.js",
 	"src/content.js",
 	"src/background.js",
+	"scripts/update-card-templates.js",
 	"tests/helpers/mock-chrome.js",
 ];
 
