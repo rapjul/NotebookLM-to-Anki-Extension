@@ -60,6 +60,7 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/content.test.js](./tests/unit/content.test.js): Unit tests for content script data mining, iframe messaging, UI button injection, duplicate modal workflows, and error display.
 - [integration/anki-connect.test.js](./tests/integration/anki-connect.test.js): Contract integration tests with mocked network calls verifying AnkiConnect status checks, model creation, schema migration, media caching, and batch export flows (`merge`, `overwrite`, `increment`).
 - [integration/card-lifecycle.test.js](./tests/integration/card-lifecycle.test.js): Behavioral integration tests executing Front and Back template lifecycles in the AnkiCardReviewer simulator across all 4 question types, platform bridges, grading dispatches, and tap protections.
+- [integration/card-negative.test.js](./tests/integration/card-negative.test.js): Negative integration tests verifying template error boundaries, graceful degradation on malformed data, storage quota failures, ghost-click prevention, and missing bridge resilience.
 
 ### 4. CLI & Synchronization Scripts (located under `./scripts/`)
 
