@@ -123,6 +123,40 @@
 	}
 
 	/**
+	 * Extracts a candidate URL string from an object representation.
+	 *
+	 * @param {object} obj - Object containing potential URL properties.
+	 * @returns {string} Found URL string or empty string.
+	 */
+	function extractUrlFromObject(obj) {
+		const keys = ["url", "src", "imageUrl", "link"];
+		for (const key of keys) {
+			const candidate = obj[key];
+			if (typeof candidate === "string" && candidate.length > 0) {
+				return candidate;
+			}
+		}
+		return "";
+	}
+
+	/**
+	 * Sanitizes a single URL candidate string or object, stripping markdown and HTML tags.
+	 *
+	 * @param {string|object|null|undefined} item - Candidate URL item.
+	 * @returns {string} Sanitized URL string or empty string.
+	 */
+	function sanitizeUrlCandidate(item) {
+		if (!item) return "";
+		const val = typeof item === "string" ? item : extractUrlFromObject(item);
+		if (typeof val !== "string") return "";
+		const trimmed = val.trim();
+		if (trimmed.startsWith("![") || trimmed.startsWith("<")) {
+			return "";
+		}
+		return trimmed;
+	}
+
+	/**
 	 * Normalizes a list of candidate image URLs, resolving objects ({url, src, imageUrl, link})
 	 * into trimmed string URLs while preserving array indexing.
 	 *
@@ -133,32 +167,7 @@
 	 */
 	function normalizeImageUrlsList(list) {
 		if (!Array.isArray(list)) return [];
-		return list.map((item) => {
-			if (!item) return "";
-			if (typeof item === "string") {
-				const trimmed = item.trim();
-				if (trimmed.startsWith("![") || trimmed.startsWith("<")) {
-					return "";
-				}
-				return trimmed;
-			}
-			if (typeof item === "object") {
-				const val =
-					item.url || item.src || item.imageUrl || item.link || "";
-				if (typeof val === "string") {
-					const trimmedVal = val.trim();
-					if (
-						trimmedVal.startsWith("![") ||
-						trimmedVal.startsWith("<")
-					) {
-						return "";
-					}
-					return trimmedVal;
-				}
-				return "";
-			}
-			return "";
-		});
+		return list.map(sanitizeUrlCandidate);
 	}
 
 	/**
@@ -289,6 +298,50 @@
 	}
 
 	/**
+	 * Resolves a single source candidate into a media reference or direct URL object.
+	 *
+	 * @param {string|object} source - Candidate source.
+	 * @param {Array<string>} imageUrls - Resolved image URLs array.
+	 * @returns {{ mediaUrl: string, alt: string, caption: string, hasMediaReference: boolean }|null} Media descriptor or null.
+	 */
+	function resolveAdditionalSourceEntry(source, imageUrls) {
+		if (typeof source === "string") {
+			const parsed = parseMediaReference(source, imageUrls);
+			if (parsed.matched) {
+				return {
+					mediaUrl: parsed.mediaUrl,
+					alt: parsed.alt,
+					caption: parsed.caption,
+					hasMediaReference: true,
+				};
+			}
+			if (isDirectUrlPrefix(source)) {
+				return {
+					mediaUrl: source.trim(),
+					alt: "",
+					caption: "",
+					hasMediaReference: true,
+				};
+			}
+			return null;
+		}
+
+		if (typeof source === "object") {
+			const objUrl = source.url || source.src || "";
+			if (objUrl) {
+				return {
+					mediaUrl: String(objUrl).trim(),
+					alt: (source.alt || "").trim(),
+					caption: (source.caption || "").trim(),
+					hasMediaReference: true,
+				};
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * Inspects candidate media sources outside questionText (e.g. q.imageUrls array or source objects).
 	 *
 	 * @param {Array<string|object>} additionalSources - Array of source strings or objects.
@@ -303,41 +356,10 @@
 			return null;
 		}
 
-		// 4. Check candidate sources outside questionText (e.g. NotebookLM q.imageUrls array)
 		for (const source of additionalSources) {
 			if (!source) continue;
-
-			if (typeof source === "string") {
-				const parsed = parseMediaReference(source, imageUrls);
-				if (parsed.matched) {
-					return {
-						mediaUrl: parsed.mediaUrl,
-						alt: parsed.alt,
-						caption: parsed.caption,
-						hasMediaReference: true,
-					};
-				}
-
-				// Raw URL string fallback
-				if (isDirectUrlPrefix(source)) {
-					return {
-						mediaUrl: source.trim(),
-						alt: "",
-						caption: "",
-						hasMediaReference: true,
-					};
-				}
-			} else if (typeof source === "object") {
-				const objUrl = source.url || source.src || "";
-				if (objUrl) {
-					return {
-						mediaUrl: String(objUrl).trim(),
-						alt: (source.alt || "").trim(),
-						caption: (source.caption || "").trim(),
-						hasMediaReference: true,
-					};
-				}
-			}
+			const resolved = resolveAdditionalSourceEntry(source, imageUrls);
+			if (resolved) return resolved;
 		}
 
 		return null;
@@ -488,16 +510,13 @@
 	}
 
 	/**
-	 * Traverses object properties to collect discovered image URLs.
+	 * Collects URLs from standard image property keys on a target object.
 	 *
-	 * Inspects known image property keys followed by recursive property traversal.
-	 *
-	 * @param {object} target - Target object to extract image URLs from.
-	 * @param {Set<object>} seen - Set of visited objects to prevent circular recursion.
-	 * @returns {Array<string>} Discovered image URLs.
+	 * @param {object} target - Target object.
+	 * @param {Array<string>} results - Results collector array.
+	 * @returns {void}
 	 */
-	function collectObjectImageUrls(target, seen) {
-		const results = [];
+	function collectStandardImageProps(target, results) {
 		const imageProps = [
 			"imageUrls",
 			"image_urls",
@@ -508,7 +527,6 @@
 			"photoUrls",
 		];
 
-		// Check standard property keys first
 		for (const prop of imageProps) {
 			const val = target[prop];
 			if (Array.isArray(val)) {
@@ -519,8 +537,21 @@
 				results.push(val.trim());
 			}
 		}
+	}
 
-		// Traverse all properties
+	/**
+	 * Traverses object properties to collect discovered image URLs.
+	 *
+	 * Inspects known image property keys followed by recursive property traversal.
+	 *
+	 * @param {object} target - Target object to extract image URLs from.
+	 * @param {Set<object>} seen - Set of visited objects to prevent circular recursion.
+	 * @returns {Array<string>} Discovered image URLs.
+	 */
+	function collectObjectImageUrls(target, seen) {
+		const results = [];
+		collectStandardImageProps(target, results);
+
 		for (const key of Object.keys(target)) {
 			const val = target[key];
 			if (typeof val === "string" && isImageUrl(val)) {
@@ -802,6 +833,23 @@
 	}
 
 	/**
+	 * Finds the first unassigned DOM image matching a predicate against a target attribute.
+	 *
+	 * @param {Array<Element>} domImages - Candidate image elements.
+	 * @param {Set<Element>} assignedImages - Already assigned image elements.
+	 * @param {function(Element, string): boolean} matcher - Matcher function.
+	 * @param {string} targetVal - Target URL or alt text value.
+	 * @returns {Element|null} Matched image element or null.
+	 */
+	function findFirstImageMatch(domImages, assignedImages, matcher, targetVal) {
+		for (const img of domImages) {
+			if (assignedImages?.has(img)) continue;
+			if (matcher(img, targetVal)) return img;
+		}
+		return null;
+	}
+
+	/**
 	 * Finds a matching unassigned DOM image element for a card.
 	 *
 	 * Prioritizes exact URL matches before falling back to alt text comparisons.
@@ -815,17 +863,22 @@
 		if (!card || !Array.isArray(domImages)) return null;
 
 		if (card.diagramUrl) {
-			for (const img of domImages) {
-				if (assignedImages?.has(img)) continue;
-				if (matchesDomImageUrl(img, card.diagramUrl)) return img;
-			}
+			const match = findFirstImageMatch(
+				domImages,
+				assignedImages,
+				matchesDomImageUrl,
+				card.diagramUrl,
+			);
+			if (match) return match;
 		}
 
 		if (card.diagramAlt) {
-			for (const img of domImages) {
-				if (assignedImages?.has(img)) continue;
-				if (matchesDomImageAlt(img, card.diagramAlt)) return img;
-			}
+			return findFirstImageMatch(
+				domImages,
+				assignedImages,
+				matchesDomImageAlt,
+				card.diagramAlt,
+			);
 		}
 
 		return null;
@@ -928,6 +981,25 @@
 	}
 
 	/**
+	 * Infers question type from options, bestAnswer, or grading attributes when explicit type is omitted.
+	 *
+	 * @param {object} q - Raw question object.
+	 * @returns {string} Inferred question type.
+	 */
+	function inferQuestionTypeFromProps(q) {
+		if (q.answerOptions?.filter((o) => o.isCorrect).length > 1) {
+			return "MULTIPLE_SELECT";
+		}
+		if (q.bestAnswer !== undefined) {
+			return "FILL_IN_THE_BLANK";
+		}
+		if (q.grading !== undefined) {
+			return "SHORT_ANSWER";
+		}
+		return "MULTIPLE_CHOICE";
+	}
+
+	/**
 	 * Determines the normalized question type from raw question properties.
 	 *
 	 * @param {object} q - Raw quiz question object.
@@ -935,26 +1007,11 @@
 	 */
 	function determineQuestionType(q) {
 		const rawType = (q.type || "").toLowerCase();
-		if (
-			rawType === "multiple_select" ||
-			(!rawType &&
-				q.answerOptions?.filter((o) => o.isCorrect).length > 1)
-		) {
-			return "MULTIPLE_SELECT";
-		}
-		if (
-			rawType === "fill_in_the_blank" ||
-			(!rawType && q.bestAnswer !== undefined)
-		) {
-			return "FILL_IN_THE_BLANK";
-		}
-		if (
-			rawType === "short_answer" ||
-			(!rawType && q.grading !== undefined)
-		) {
-			return "SHORT_ANSWER";
-		}
-		return "MULTIPLE_CHOICE";
+		if (rawType === "multiple_select") return "MULTIPLE_SELECT";
+		if (rawType === "fill_in_the_blank") return "FILL_IN_THE_BLANK";
+		if (rawType === "short_answer") return "SHORT_ANSWER";
+		if (rawType === "multiple_choice") return "MULTIPLE_CHOICE";
+		return inferQuestionTypeFromProps(q);
 	}
 
 	/**

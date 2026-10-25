@@ -672,6 +672,19 @@ export class MockElement extends MockNode {
 }
 
 /**
+ * Evaluates whether a character represents a quote boundary in selector parsing.
+ *
+ * @param {string} ch - Current character.
+ * @param {boolean} inQuote - Whether currently inside quotes.
+ * @param {string} quoteChar - Current quote character delimiter.
+ * @returns {boolean} True if character toggles quotation state.
+ */
+function isQuoteBoundary(ch, inQuote, quoteChar) {
+	if (ch !== '"' && ch !== "'") return false;
+	return !inQuote || quoteChar === ch;
+}
+
+/**
  * Splits a compound CSS selector on descendant whitespace, respecting quoted attribute strings.
  *
  * @param {string} selector - Compound CSS selector.
@@ -685,7 +698,7 @@ function splitSelectorParts(selector) {
 
 	for (let i = 0; i < selector.length; i++) {
 		const ch = selector[i];
-		if ((ch === '"' || ch === "'") && (!inQuote || quoteChar === ch)) {
+		if (isQuoteBoundary(ch, inQuote, quoteChar)) {
 			inQuote = !inQuote;
 			quoteChar = inQuote ? ch : "";
 			current += ch;
@@ -842,6 +855,62 @@ function matchesSelector(element, selector) {
 }
 
 /**
+ * Parses and attaches raw attribute strings onto a MockElement.
+ *
+ * @param {MockElement} elem - Target element to attach attributes to.
+ * @param {string} rawAttrs - Raw attribute substring from tag.
+ * @returns {void}
+ */
+function populateElementAttributes(elem, rawAttrs) {
+	if (!rawAttrs) return;
+	const attrRegex =
+		/([a-zA-Z0-9-_:]+)(?:=(["'])(.*?)\2|=([^\s>]+))?/g;
+	let attrMatch;
+	while ((attrMatch = attrRegex.exec(rawAttrs)) !== null) {
+		const attrName = attrMatch[1];
+		const attrVal =
+			attrMatch[3] !== undefined
+				? attrMatch[3]
+				: attrMatch[4] !== undefined
+					? attrMatch[4]
+					: "";
+		elem.setAttribute(attrName, attrVal);
+	}
+}
+
+/**
+ * Handles element opening or closing tag parsing into node stack.
+ *
+ * @param {RegExpExecArray} match - Matched regex token.
+ * @param {MockNode[]} stack - Node hierarchy stack.
+ * @returns {void}
+ */
+function processParsedTagToken(match, stack) {
+	const isClosing = Boolean(match[2]);
+	const tagName = match[3].toUpperCase();
+	const rawAttrs = match[4] || "";
+	const isSelfClosing =
+		Boolean(match[5]) || VOID_ELEMENTS.has(tagName);
+
+	if (isClosing) {
+		if (
+			stack.length > 1 &&
+			stack[stack.length - 1].nodeName === tagName
+		) {
+			stack.pop();
+		}
+		return;
+	}
+
+	const elem = new MockElement(tagName);
+	populateElementAttributes(elem, rawAttrs);
+	stack[stack.length - 1].appendChild(elem);
+	if (!isSelfClosing) {
+		stack.push(elem);
+	}
+}
+
+/**
  * Parses an HTML string into a flat or nested tree of MockNode objects.
  *
  * @param {string} html - HTML string to parse.
@@ -861,40 +930,7 @@ export function parseHTMLToNodes(html) {
 				stack[stack.length - 1].appendChild(new MockTextNode(text));
 			}
 		} else if (match[1] !== undefined) {
-			const isClosing = Boolean(match[2]);
-			const tagName = match[3].toUpperCase();
-			const rawAttrs = match[4] || "";
-			const isSelfClosing =
-				Boolean(match[5]) || VOID_ELEMENTS.has(tagName);
-
-			if (isClosing) {
-				if (
-					stack.length > 1 &&
-					stack[stack.length - 1].nodeName === tagName
-				) {
-					stack.pop();
-				}
-			} else {
-				const elem = new MockElement(tagName);
-				const attrRegex =
-					/([a-zA-Z0-9-_:]+)(?:=(["'])(.*?)\2|=([^\s>]+))?/g;
-				let attrMatch;
-				while ((attrMatch = attrRegex.exec(rawAttrs)) !== null) {
-					const attrName = attrMatch[1];
-					const attrVal =
-						attrMatch[3] !== undefined
-							? attrMatch[3]
-							: attrMatch[4] !== undefined
-								? attrMatch[4]
-								: "";
-					elem.setAttribute(attrName, attrVal);
-				}
-
-				stack[stack.length - 1].appendChild(elem);
-				if (!isSelfClosing) {
-					stack.push(elem);
-				}
-			}
+			processParsedTagToken(match, stack);
 		}
 	}
 

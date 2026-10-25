@@ -416,6 +416,83 @@ async function persistPreResolvedMedia(card, idx, mediaLogs) {
 }
 
 /**
+ * Validates an HTTP response for remote media, checking for redirection to sign-in or HTTP errors.
+ *
+ * @param {Response} imgRes - Fetch response object.
+ * @param {number} idx - Card index for logging.
+ * @param {Array<string>} mediaLogs - Diagnostic log collector.
+ * @returns {void}
+ * @throws {Error} If redirected to auth or status is non-2xx.
+ */
+function validateMediaHttpResponse(imgRes, idx, mediaLogs) {
+	const contentType = imgRes.headers?.get
+		? imgRes.headers.get("content-type")
+		: "unknown";
+	mediaLogs.push(
+		`📥 [Card #${idx + 1}] HTTP ${imgRes.status} ${imgRes.statusText} (Redirected: ${imgRes.redirected ? imgRes.url : "no"}, Content-Type: ${contentType})`,
+	);
+
+	if (
+		imgRes.redirected &&
+		(imgRes.url.includes("accounts.google.com") ||
+			imgRes.url.includes("signin"))
+	) {
+		mediaLogs.push(
+			`⚠️ [Card #${idx + 1}] Redirected to Google sign-in page: ${imgRes.url}. Authentication cookies missing or unaccepted.`,
+		);
+		throw new Error(
+			"Redirected to Google sign-in page (authentication required).",
+		);
+	}
+
+	if (!imgRes.ok) {
+		mediaLogs.push(
+			`❌ [Card #${idx + 1}] HTTP request failed with status ${imgRes.status}: ${imgRes.statusText}`,
+		);
+		throw new Error(`HTTP ${imgRes.status} ${imgRes.statusText}`);
+	}
+}
+
+/**
+ * Validates a downloaded media buffer, ensuring it contains recognized image binary signatures.
+ *
+ * @param {ArrayBuffer} buffer - Downloaded binary buffer.
+ * @param {number} idx - Card index for logging.
+ * @param {Array<string>} mediaLogs - Diagnostic log collector.
+ * @returns {string} Detected file extension (e.g. "png", "jpeg", "webp").
+ * @throws {Error} If buffer is empty or unrecognized.
+ */
+function validateMediaBuffer(buffer, idx, mediaLogs) {
+	if (!buffer || buffer.byteLength === 0) {
+		mediaLogs.push(
+			`❌ [Card #${idx + 1}] Downloaded image buffer is empty (0 bytes).`,
+		);
+		throw new Error("Downloaded image buffer is empty (0 bytes).");
+	}
+
+	mediaLogs.push(
+		`📦 [Card #${idx + 1}] Received ${buffer.byteLength} bytes binary payload.`,
+	);
+
+	const detectedExt = detectImageFormatFromBuffer(buffer);
+	if (!detectedExt) {
+		const snippet = buffer
+			? Array.from(new Uint8Array(buffer.slice(0, 20)))
+					.map((b) => b.toString(16).padStart(2, "0"))
+					.join(" ")
+			: "none";
+		mediaLogs.push(
+			`⚠️ [Card #${idx + 1}] Buffer is not a recognized image format. Hex: ${snippet}`,
+		);
+		throw new Error(
+			"Downloaded content is not a valid image format (HTML or unrecognized binary signature).",
+		);
+	}
+
+	return detectedExt;
+}
+
+/**
  * Downloads a remote diagram image, validates its format, and persists it to Anki.
  *
  * @param {object} card - Flashcard object containing diagramUrl.
@@ -435,60 +512,10 @@ async function fetchAndPersistRemoteMedia(card, idx, mediaLogs) {
 		const imgRes = await fetch(card.diagramUrl, {
 			credentials: "include",
 		});
-
-		const contentType = imgRes.headers?.get
-			? imgRes.headers.get("content-type")
-			: "unknown";
-		mediaLogs.push(
-			`📥 [Card #${idx + 1}] HTTP ${imgRes.status} ${imgRes.statusText} (Redirected: ${imgRes.redirected ? imgRes.url : "no"}, Content-Type: ${contentType})`,
-		);
-
-		if (
-			imgRes.redirected &&
-			(imgRes.url.includes("accounts.google.com") ||
-				imgRes.url.includes("signin"))
-		) {
-			mediaLogs.push(
-				`⚠️ [Card #${idx + 1}] Redirected to Google sign-in page: ${imgRes.url}. Authentication cookies missing or unaccepted.`,
-			);
-			throw new Error(
-				"Redirected to Google sign-in page (authentication required).",
-			);
-		}
-
-		if (!imgRes.ok) {
-			mediaLogs.push(
-				`❌ [Card #${idx + 1}] HTTP request failed with status ${imgRes.status}: ${imgRes.statusText}`,
-			);
-			throw new Error(`HTTP ${imgRes.status} ${imgRes.statusText}`);
-		}
+		validateMediaHttpResponse(imgRes, idx, mediaLogs);
 
 		const buffer = await imgRes.arrayBuffer();
-		if (!buffer || buffer.byteLength === 0) {
-			mediaLogs.push(
-				`❌ [Card #${idx + 1}] Downloaded image buffer is empty (0 bytes).`,
-			);
-			throw new Error("Downloaded image buffer is empty (0 bytes).");
-		}
-
-		mediaLogs.push(
-			`📦 [Card #${idx + 1}] Received ${buffer.byteLength} bytes binary payload.`,
-		);
-
-		const detectedExt = detectImageFormatFromBuffer(buffer);
-		if (!detectedExt) {
-			const snippet = buffer
-				? Array.from(new Uint8Array(buffer.slice(0, 20)))
-						.map((b) => b.toString(16).padStart(2, "0"))
-						.join(" ")
-				: "none";
-			mediaLogs.push(
-				`⚠️ [Card #${idx + 1}] Buffer is not a recognized image format. Hex: ${snippet}`,
-			);
-			throw new Error(
-				"Downloaded content is not a valid image format (HTML or unrecognized binary signature).",
-			);
-		}
+		const detectedExt = validateMediaBuffer(buffer, idx, mediaLogs);
 
 		const localFilename = `notebooklm_${Date.now()}_${idx}.${detectedExt}`;
 		const base64Data = arrayBufferToBase64(buffer);
@@ -868,6 +895,138 @@ async function handleSendBatchToAnki(request, sendResponse) {
 }
 
 /**
+ * Loads card templates (front/back HTML) and CSS styles asynchronously from extension assets.
+ *
+ * @returns {Promise<[string, string, string]>} Promise resolving to [frontHtml, backHtml, stylingCss].
+ */
+async function loadExtensionTemplates() {
+	/**
+	 * Fetches text content of a local extension asset asynchronously.
+	 *
+	 * @param {string} relativePath - Path to extension asset.
+	 * @param {string} fileName - Asset file name for error reporting.
+	 * @returns {Promise<string>} File text content.
+	 */
+	const fetchAsset = async (relativePath, fileName) => {
+		const res = await fetch(chrome.runtime.getURL(relativePath));
+		if (!res.ok) throw new Error(`Failed to fetch ${fileName}`);
+		return res.text();
+	};
+
+	return Promise.all([
+		fetchAsset("anki_templates/front.html", "front.html"),
+		fetchAsset("anki_templates/back.html", "back.html"),
+		fetchAsset("anki_templates/styling.css", "styling.css"),
+	]);
+}
+
+/**
+ * Migrates legacy fields and synchronizes missing fields for an existing Anki model.
+ *
+ * @param {string} noteType - Model/Note type name.
+ * @returns {Promise<void>}
+ */
+async function syncExistingModelFields(noteType) {
+	const fieldData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"modelFieldNames",
+		{ modelName: noteType },
+	);
+
+	if (!fieldData.result || !Array.isArray(fieldData.result)) return;
+
+	let existingFields = [...fieldData.result];
+
+	if (
+		existingFields.includes("ArchDiagram") &&
+		!existingFields.includes("Image")
+	) {
+		console.log(
+			"[Anki Background] 🔄 Renaming field 'ArchDiagram' to 'Image' in model...",
+		);
+		const renameData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+			"modelFieldRename",
+			{
+				modelName: noteType,
+				oldFieldName: "ArchDiagram",
+				newFieldName: "Image",
+			},
+		);
+		if (!renameData.error) {
+			existingFields = existingFields.map((f) =>
+				f === "ArchDiagram" ? "Image" : f,
+			);
+		}
+	}
+
+	const missingFields = NOTEBOOKLM_MODEL_FIELDS.filter(
+		(f) => !existingFields.includes(f),
+	);
+
+	for (const fieldName of missingFields) {
+		console.log(
+			`[Anki Background] ➕ Adding missing field '${fieldName}' to model...`,
+		);
+		await NotebookLMToAnkiUtils.invokeAnkiConnect("modelFieldAdd", {
+			modelName: noteType,
+			fieldName,
+		});
+	}
+}
+
+/**
+ * Updates templates and styling for an existing Anki model.
+ *
+ * @param {string} noteType - Model/Note type name.
+ * @param {string} frontHtml - Front HTML template.
+ * @param {string} backHtml - Back HTML template.
+ * @param {string} stylingCss - CSS styling rules.
+ * @returns {Promise<void>}
+ */
+async function syncExistingModelTemplates(
+	noteType,
+	frontHtml,
+	backHtml,
+	stylingCss,
+) {
+	const tmplData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"updateModelTemplates",
+		{
+			model: {
+				name: noteType,
+				templates: {
+					"NotebookLM Quiz": {
+						Front: frontHtml,
+						Back: backHtml,
+					},
+				},
+			},
+		},
+	);
+	if (tmplData.error) {
+		console.warn(
+			"[Anki Background] ⚠️ updateModelTemplates error:",
+			tmplData.error,
+		);
+	}
+
+	const styleData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
+		"updateModelStyling",
+		{
+			model: {
+				name: noteType,
+				css: stylingCss,
+			},
+		},
+	);
+	if (styleData.error) {
+		console.warn(
+			"[Anki Background] ⚠️ updateModelStyling error:",
+			styleData.error,
+		);
+	}
+}
+
+/**
  * Ensures that the custom "NotebookLM Quiz" note type (model) exists in Anki and is up-to-date.
  *
  * If missing, creates the model with 20 fields, templates, and styling.
@@ -893,32 +1052,6 @@ async function ensureNotebookLMModelExists() {
 		throw new Error(data.error);
 	}
 
-	/**
-	 * Loads card templates (front/back HTML) and CSS styles asynchronously from extension assets.
-	 *
-	 * @returns {Promise<[string, string, string]>} Promise resolving to [frontHtml, backHtml, stylingCss].
-	 */
-	const loadLocalTemplates = async () => {
-		/**
-		 * Fetches text content of a local extension asset asynchronously.
-		 *
-		 * @param {string} relativePath - Path to extension asset.
-		 * @param {string} fileName - Asset file name for error reporting.
-		 * @returns {Promise<string>} File text content.
-		 */
-		const fetchAsset = async (relativePath, fileName) => {
-			const res = await fetch(chrome.runtime.getURL(relativePath));
-			if (!res.ok) throw new Error(`Failed to fetch ${fileName}`);
-			return res.text();
-		};
-
-		return Promise.all([
-			fetchAsset("anki_templates/front.html", "front.html"),
-			fetchAsset("anki_templates/back.html", "back.html"),
-			fetchAsset("anki_templates/styling.css", "styling.css"),
-		]);
-	};
-
 	// If model exists, check schema and perform non-destructive migrations
 	if (data.result && data.result.includes(NOTE_TYPE)) {
 		console.log(
@@ -926,99 +1059,15 @@ async function ensureNotebookLMModelExists() {
 		);
 
 		try {
-			const fieldData =
-				await NotebookLMToAnkiUtils.invokeAnkiConnect(
-					"modelFieldNames",
-					{ modelName: NOTE_TYPE },
-				);
-
-			if (fieldData.result && Array.isArray(fieldData.result)) {
-				let existingFields = [...fieldData.result];
-
-				// Migrate legacy ArchDiagram -> Image
-				if (
-					existingFields.includes("ArchDiagram") &&
-					!existingFields.includes("Image")
-				) {
-					console.log(
-						"[Anki Background] 🔄 Renaming field 'ArchDiagram' to 'Image' in model...",
-					);
-					const renameData =
-						await NotebookLMToAnkiUtils.invokeAnkiConnect(
-							"modelFieldRename",
-							{
-								modelName: NOTE_TYPE,
-								oldFieldName: "ArchDiagram",
-								newFieldName: "Image",
-							},
-						);
-					if (!renameData.error) {
-						existingFields = existingFields.map((f) =>
-							f === "ArchDiagram" ? "Image" : f,
-						);
-					}
-				}
-
-				// Add any missing fields
-				const missingFields = NOTEBOOKLM_MODEL_FIELDS.filter(
-					(f) => !existingFields.includes(f),
-				);
-
-				for (const fieldName of missingFields) {
-					console.log(
-						`[Anki Background] ➕ Adding missing field '${fieldName}' to model...`,
-					);
-					await NotebookLMToAnkiUtils.invokeAnkiConnect(
-						"modelFieldAdd",
-						{
-							modelName: NOTE_TYPE,
-							fieldName,
-						},
-					);
-				}
-			}
-
-			// Update templates and styling
+			await syncExistingModelFields(NOTE_TYPE);
 			const [frontHtml, backHtml, stylingCss] =
-				await loadLocalTemplates();
-			const tmplData =
-				await NotebookLMToAnkiUtils.invokeAnkiConnect(
-					"updateModelTemplates",
-					{
-						model: {
-							name: NOTE_TYPE,
-							templates: {
-								"NotebookLM Quiz": {
-									Front: frontHtml,
-									Back: backHtml,
-								},
-							},
-						},
-					},
-				);
-			if (tmplData.error) {
-				console.warn(
-					"[Anki Background] ⚠️ updateModelTemplates error:",
-					tmplData.error,
-				);
-			}
-
-			const styleData =
-				await NotebookLMToAnkiUtils.invokeAnkiConnect(
-					"updateModelStyling",
-					{
-						model: {
-							name: NOTE_TYPE,
-							css: stylingCss,
-						},
-					},
-				);
-			if (styleData.error) {
-				console.warn(
-					"[Anki Background] ⚠️ updateModelStyling error:",
-					styleData.error,
-				);
-			}
+				await loadExtensionTemplates();
+			await syncExistingModelTemplates(
+				NOTE_TYPE,
+				frontHtml,
+				backHtml,
+				stylingCss,
+			);
 		} catch (err) {
 			console.warn(
 				"[Anki Background] Non-critical error during model schema check or template update:",
@@ -1033,7 +1082,7 @@ async function ensureNotebookLMModelExists() {
 		`[Anki Background] ℹ️ Model '${NOTE_TYPE}' not found. Creating model with 20 fields...`,
 	);
 
-	const [frontHtml, backHtml, stylingCss] = await loadLocalTemplates();
+	const [frontHtml, backHtml, stylingCss] = await loadExtensionTemplates();
 
 	const createData = await NotebookLMToAnkiUtils.invokeAnkiConnect(
 		"createModel",

@@ -138,6 +138,33 @@
 	}
 
 	/**
+	 * Validates whether an image element is loaded with valid dimensions.
+	 *
+	 * @param {HTMLImageElement} img - Image element to check.
+	 * @returns {boolean} True if loaded and has non-zero natural dimensions.
+	 */
+	function isImageElementLoaded(img) {
+		if (!img || typeof document === "undefined") return false;
+		return Boolean(img.complete && img.naturalWidth && img.naturalHeight);
+	}
+
+	/**
+	 * Parses a Base64 data URL into format extension and payload.
+	 *
+	 * @param {string|null} dataUrl - Canvas data URL string.
+	 * @returns {{ base64: string, format: string }|null} Formatted payload or null.
+	 */
+	function parseDataUrlPayload(dataUrl) {
+		if (!dataUrl) return null;
+		const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+		if (!match) return null;
+		return {
+			format: match[1] || "webp",
+			base64: match[2],
+		};
+	}
+
+	/**
 	 * Extracts Base64-encoded image data from a rendered DOM image element using an in-memory canvas.
 	 *
 	 * Bounds image dimensions to maxDimension (default 2048px) and prioritizes lightweight WebP encoding (0.85 quality)
@@ -149,10 +176,7 @@
 	 */
 	function extractDomImageBase64(img, maxDimension = 2048) {
 		try {
-			if (!img || typeof document === "undefined") return null;
-			if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
-				return null;
-			}
+			if (!isImageElementLoaded(img)) return null;
 
 			const { width, height } = calculateBoundedDimensions(
 				img.naturalWidth,
@@ -169,15 +193,7 @@
 			ctx.drawImage(img, 0, 0, width, height);
 
 			const dataUrl = serializeCanvasToDataUrl(canvas);
-			if (!dataUrl) return null;
-
-			const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
-			if (!match) return null;
-
-			return {
-				format: match[1] || "webp",
-				base64: match[2],
-			};
+			return parseDataUrlPayload(dataUrl);
 		} catch {
 			// Canvas may be tainted if cross-origin without CORS
 			return null;
@@ -525,6 +541,73 @@
 	let buttonTemplate = null;
 
 	/**
+	 * Dispatches actions received from miner iframes to corresponding top-window handlers.
+	 *
+	 * @param {object} data - Message payload received from postMessage.
+	 * @returns {void}
+	 */
+	function handleTopWindowMessageAction(data) {
+		if (data.action === "ANKI_MINER_READY") {
+			isMinerConnected = true;
+			console.log("[Anki Bridge] ✅ Data Miner is connected and ready.");
+			updateButtonState("ready");
+			return;
+		}
+
+		if (data.action === "ANKI_REAL_SUCCESS") {
+			const exportedStr =
+				data.imagesExported !== undefined ? data.imagesExported : "N/A";
+			const foundStr =
+				data.imagesFound !== undefined ? data.imagesFound : "N/A";
+			console.log(
+				`[Anki Bridge] 🎉 Export successful! (v${EXTENSION_VERSION}) Count:`,
+				data.count,
+				"Skipped:",
+				data.skipped,
+				"Images exported:",
+				exportedStr,
+				"Images found:",
+				foundStr,
+			);
+			isExporting = false;
+			updateButtonState("success", data.count, data.skipped);
+			return;
+		}
+
+		if (data.action === "ANKI_REAL_FAIL") {
+			console.error("[Anki/AnkiConnect Error] Export Failed:", data.error);
+			isExporting = false;
+			showErrorModal(data.error);
+			updateButtonState("error");
+			return;
+		}
+
+		if (data.action === "ANKI_EXTRACTED_DATA") {
+			const foundCount =
+				data.imagesFound !== undefined ? data.imagesFound : 0;
+			console.log(
+				"[Anki Bridge] 📦 Extracted cards received on top window:",
+				data.cards?.length,
+				"Images found:",
+				foundCount,
+			);
+			handleExtractedData(
+				data.cards,
+				data.deckTitle,
+				data.nbTitle,
+				data.quizTitle,
+				data.topicsCovered,
+				data.imagesFound,
+				data.imagesResolved,
+			).catch((err) => {
+				console.error("[Anki Bridge] ❌ handleExtractedData error:", err);
+				isExporting = false;
+				updateButtonState("error");
+			});
+		}
+	}
+
+	/**
 	 * Initializes the UI injector by pre-fetching templates (button and modal HTML),
 	 * setting up message event listeners for communication, and observing the DOM
 	 * to insert the export button near anchor elements.
@@ -570,65 +653,7 @@
 				"[Anki Bridge] 📥 Top Window received message action:",
 				event.data.action,
 			);
-			if (event.data.action === "ANKI_MINER_READY") {
-				isMinerConnected = true;
-				console.log(
-					"[Anki Bridge] ✅ Data Miner is connected and ready.",
-				);
-				updateButtonState("ready");
-			} else if (event.data.action === "ANKI_REAL_SUCCESS") {
-				console.log(
-					`[Anki Bridge] 🎉 Export successful! (v${EXTENSION_VERSION}) Count:`,
-					event.data.count,
-					"Skipped:",
-					event.data.skipped,
-					"Images exported:",
-					event.data.imagesExported !== undefined
-						? event.data.imagesExported
-						: "N/A",
-					"Images found:",
-					event.data.imagesFound !== undefined
-						? event.data.imagesFound
-						: "N/A",
-				);
-				isExporting = false;
-				updateButtonState(
-					"success",
-					event.data.count,
-					event.data.skipped,
-				);
-			} else if (event.data.action === "ANKI_REAL_FAIL") {
-				console.error(
-					"[Anki/AnkiConnect Error] Export Failed:",
-					event.data.error,
-				);
-				isExporting = false;
-				showErrorModal(event.data.error);
-				updateButtonState("error");
-			} else if (event.data.action === "ANKI_EXTRACTED_DATA") {
-				console.log(
-					"[Anki Bridge] 📦 Extracted cards received on top window:",
-					event.data.cards?.length,
-					"Images found:",
-					event.data.imagesFound !== undefined ? event.data.imagesFound : 0,
-				);
-				handleExtractedData(
-					event.data.cards,
-					event.data.deckTitle,
-					event.data.nbTitle,
-					event.data.quizTitle,
-					event.data.topicsCovered,
-					event.data.imagesFound,
-					event.data.imagesResolved,
-				).catch((err) => {
-					console.error(
-						"[Anki Bridge] ❌ handleExtractedData error:",
-						err,
-					);
-					isExporting = false;
-					updateButtonState("error");
-				});
-			}
+			handleTopWindowMessageAction(event.data);
 		});
 
 		const observer = new MutationObserver(() => {
@@ -794,6 +819,38 @@
 	}
 
 	/**
+	 * Logs background media export diagnostics to the console.
+	 *
+	 * @param {object|null|undefined} res - Response from runtime message.
+	 * @param {number} fallbackFound - Fallback count of images found.
+	 * @returns {{ exportedImgCount: number, foundImgCount: number }} Processed media counts.
+	 */
+	function logBatchMediaResults(res, fallbackFound) {
+		if (res?.mediaLogs && Array.isArray(res.mediaLogs)) {
+			for (const logLine of res.mediaLogs) {
+				console.log(`[Anki Background Media] ${logLine}`);
+			}
+		}
+
+		const exportedImgCount =
+			typeof res?.imagesExported === "number" ? res.imagesExported : 0;
+		const foundImgCount =
+			typeof res?.imagesFound === "number" ? res.imagesFound : fallbackFound;
+
+		console.log(
+			`[Anki Bridge] 🖼️ Media summary: ${exportedImgCount} of ${foundImgCount} image(s) successfully exported to Anki.`,
+		);
+
+		if (foundImgCount > exportedImgCount) {
+			console.warn(
+				`[Anki Bridge] ⚠️ ${foundImgCount - exportedImgCount} image(s) were not exported. If an image was lazy-loaded, please navigate to that question in NotebookLM and click Anki Export again.`,
+			);
+		}
+
+		return { exportedImgCount, foundImgCount };
+	}
+
+	/**
 	 * Sends the batch of cards to the background script to perform the actual
 	 * import/creation of the deck in Anki.
 	 *
@@ -832,26 +889,10 @@
 			};
 		}
 
-		if (res?.mediaLogs && Array.isArray(res.mediaLogs)) {
-			for (const logLine of res.mediaLogs) {
-				console.log(`[Anki Background Media] ${logLine}`);
-			}
-		}
-
-		const exportedImgCount =
-			typeof res?.imagesExported === "number" ? res.imagesExported : 0;
-		const foundImgCount =
-			typeof res?.imagesFound === "number" ? res.imagesFound : imagesFound;
-
-		console.log(
-			`[Anki Bridge] 🖼️ Media summary: ${exportedImgCount} of ${foundImgCount} image(s) successfully exported to Anki.`,
+		const { exportedImgCount, foundImgCount } = logBatchMediaResults(
+			res,
+			imagesFound,
 		);
-
-		if (foundImgCount > exportedImgCount) {
-			console.warn(
-				`[Anki Bridge] ⚠️ ${foundImgCount - exportedImgCount} image(s) were not exported. If an image was lazy-loaded, please navigate to that question in NotebookLM and click Anki Export again.`,
-			);
-		}
 
 		if (res?.success) {
 			window.top.postMessage(
