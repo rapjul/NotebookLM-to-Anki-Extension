@@ -64,6 +64,12 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 
 - [update-anki-templates](./.agents/skills/update-anki-templates/SKILL.md): Local agent skill runbook guiding AI agents through diffing, inspecting, and synchronizing card templates to Anki.
 
+### 6. Platform Specifications & Architecture Documentation (located under `./docs/`)
+
+- [anki-host-platforms.md](./docs/anki-host-platforms.md): Technical specification of runtime web engines, bridge globals, flip and grading dispatches, tap interception, and mobile detection signals across Anki Desktop, AnkiMobile iOS, iPadOS with Magic Keyboard, and AnkiDroid with manual device verification checklists.
+- [adrs/0001-dom-image-resolution-for-lazy-loaded-media.md](./docs/adrs/0001-dom-image-resolution-for-lazy-loaded-media.md): Architectural decision record for DOM-based diagram extraction and WebP image downscaling.
+- [adrs/0002-cross-browser-mv3-manifest-architecture.md](./docs/adrs/0002-cross-browser-mv3-manifest-architecture.md): Architectural decision record for Manifest V3 cross-browser compatibility across Chromium and Gecko.
+
 ---
 
 ## 🚀 Key Features & Implementation Logic
@@ -172,18 +178,16 @@ When implementing changes, future agents **must** adhere to the following rules:
 1.  **Code Comments & Documentation:**
     - Comment every function, method, parameter, and type.
     - Write JSDoc-formatted comments for all functions in JavaScript files.
-2.  **No Direct Git Commits:**
-    - Do not commit changes to Git unless explicitly requested by the user.
-3.  **Modern CSS Guidelines:**
+2.  **Modern CSS Guidelines:**
     - Maintain style hierarchy and prevent specificity collision (avoid nested overrides that trigger descending specificity selector warnings).
     - Prefer CSS variables / custom design tokens for themes.
-4.  **Linter & Error Safety:**
+3.  **Linter & Error Safety:**
     - Do not leave unused variables or parameter blocks in catch clauses.
     - Use modern JavaScript APIs (e.g., standard fetch, async/await patterns, optional chaining).
-5.  **Automated Testing & Privacy:**
+4.  **Automated Testing & Privacy:**
     - Run the Node.js test suite using `npm test`, `npm run test:watch`, or `npm run test:coverage`.
     - Ensure all committed test fixtures are sanitized and generic (basic chemistry, astronomy, algebra, geometry, trigonometry, calculus, physics) with zero personal or identifying information.
     - Maintain pure business logic in [`./src/utils.js`](./src/utils.js) without test-only backdoor branches in production code.
-6.  **Card Template Syntax & Curly Braces Safety:**
+5.  **Card Template Syntax & Curly Braces Safety:**
     - Never write raw double curly braces (`{{` or `}}`) in `<script>` tags, comments, or JSDoc blocks in `front.html` or `back.html` unless referencing a real Anki field or conditional replacement.
     - Anki's template parser interprets any double curly braces as field placeholders, which causes template compilation failures if the referenced name is not an Anki note field.
