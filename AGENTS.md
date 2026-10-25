@@ -41,6 +41,8 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 
 - [helpers/utils.js](./tests/helpers/utils.js): ES module adapter re-exporting shared utilities from `src/utils.js`.
 - [helpers/mock-chrome.js](./tests/helpers/mock-chrome.js): Zero-dependency in-memory mock harness for Chrome Extension APIs (`chrome.storage`, `chrome.runtime`, `chrome.tabs`, `chrome.scripting`) and minimal DOM simulation for Node.js test execution.
+- [helpers/anki-compiler.js](./tests/helpers/anki-compiler.js): Pure Anki template compiler simulating Anki's Mustache-style field replacements, conditional blocks, and raw HTML injection.
+- [helpers/anki-reviewer.js](./tests/helpers/anki-reviewer.js): Persistent Anki card reviewer simulator using `jsdom` supporting Desktop, AnkiMobile iOS, iPadOS Magic Keyboard, and AnkiDroid platform bridges.
 - [fixtures/standard-quiz.json](./tests/fixtures/standard-quiz.json): Sanitized academic quiz fixtures covering basic chemistry and astronomy.
 - [fixtures/multi-format-quiz.json](./tests/fixtures/multi-format-quiz.json): Sanitized multi-format quiz fixture covering all 4 question types (`multiple_choice`, `multiple_select`, `fill_in_the_blank`, `short_answer`), embedded diagrams, and topic taxonomy.
 - [fixtures/math-physics-quiz.json](./tests/fixtures/math-physics-quiz.json): Mathematical formulas verifying LaTeX rendering across algebra, geometry, trigonometry, calculus, and quantum physics.
@@ -50,6 +52,8 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/transformer.test.js](./tests/unit/transformer.test.js): Unit tests for JSON extraction, multi-format card normalization, LaTeX preservation, and 20-field Anki payload mapping.
 - [unit/deduplication.test.js](./tests/unit/deduplication.test.js): Unit tests for question text normalization, duplicate note filtering, and skipped duplicate counts.
 - [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, CSS selectors, mobile tap shielding, and extension manifest validity.
+- [unit/anki-compiler.test.js](./tests/unit/anki-compiler.test.js): Unit tests for template field substitution, conditional block evaluation, unknown field rejection, and raw quote injection.
+- [unit/anki-reviewer.test.js](./tests/unit/anki-reviewer.test.js): Unit tests for reviewer platform profiles, bridge dispatch spies, MathJax recording, and cross-card session storage persistence.
 - [unit/update-templates.test.js](./tests/unit/update-templates.test.js): Unit tests for template boundary extraction, fallback heuristic migration, idempotency, backup snapshots, and editor conflict handling.
 - [unit/background.test.js](./tests/unit/background.test.js): Unit tests for background service worker message routing, AnkiConnect HTTP requests, model creation, dynamic schema migration, media downloading, and batch export flows.
 - [unit/popup.test.js](./tests/unit/popup.test.js): Unit tests for configuration popup UI initialization, settings persistence, debug toggle, and active tab script injection.

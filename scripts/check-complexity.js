@@ -40,6 +40,8 @@ const AUDIT_FILES = [
 	"src/background.js",
 	"scripts/update-card-templates.js",
 	"tests/helpers/mock-chrome.js",
+	"tests/helpers/anki-compiler.js",
+	"tests/helpers/anki-reviewer.js",
 ];
 
 /**
