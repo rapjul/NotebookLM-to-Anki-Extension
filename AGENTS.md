@@ -58,6 +58,7 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/background.test.js](./tests/unit/background.test.js): Unit tests for background service worker message routing, AnkiConnect HTTP requests, model creation, dynamic schema migration, media downloading, and batch export flows.
 - [unit/popup.test.js](./tests/unit/popup.test.js): Unit tests for configuration popup UI initialization, settings persistence, debug toggle, and active tab script injection.
 - [unit/content.test.js](./tests/unit/content.test.js): Unit tests for content script data mining, iframe messaging, UI button injection, duplicate modal workflows, and error display.
+- [unit/chrome-api-async.test.js](./tests/unit/chrome-api-async.test.js): Unit tests verifying modern promise-based Chrome API usage (`async`/`await`) across the extension scripts.
 - [integration/anki-connect.test.js](./tests/integration/anki-connect.test.js): Contract integration tests with mocked network calls verifying AnkiConnect status checks, model creation, schema migration, media caching, and batch export flows (`merge`, `overwrite`, `increment`).
 - [integration/card-lifecycle.test.js](./tests/integration/card-lifecycle.test.js): Behavioral integration tests executing Front and Back template lifecycles in the AnkiCardReviewer simulator across all 4 question types, platform bridges, grading dispatches, and tap protections.
 - [integration/card-negative.test.js](./tests/integration/card-negative.test.js): Negative integration tests verifying template error boundaries, graceful degradation on malformed data, storage quota failures, ghost-click prevention, and missing bridge resilience.
@@ -65,6 +66,9 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 ### 4. CLI & Synchronization Scripts (located under `./scripts/`)
 
 - [update-card-templates.js](./scripts/update-card-templates.js): Standalone Node.js CLI tool and `AnkiTemplateSynchronizer` module for bidirectional synchronization of card templates (`Front`, `Back`, and `Styles`) to Anki via AnkiConnect. Preserves non-addon code (e.g. `AJT Japanese`), creates timestamped live backups, and provides interactive retry on editor conflicts.
+- [build.js](./scripts/build.js): Build script packaging `./src/` into cross-browser extension bundles (`npm run build`, `npm run build:chrome`, `npm run build:firefox`).
+- [check-complexity.js](./scripts/check-complexity.js): Cyclomatic complexity checker (via `acorn`) run by `npm run lint:complexity`.
+- [lint.js](./scripts/lint.js): Project linter. `npm run lint` runs the complexity check and then this script; `npm run lint:source` runs `web-ext lint`.
 
 ### 5. Local Workspace Agent Skills (located under `./.agents/skills/`)
 
