@@ -51,7 +51,7 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/formatter.test.js](./tests/unit/formatter.test.js): Unit tests for HTML entity decoding, title normalization, deck templates, and error message formatting.
 - [unit/transformer.test.js](./tests/unit/transformer.test.js): Unit tests for JSON extraction, multi-format card normalization, LaTeX preservation, and 20-field Anki payload mapping.
 - [unit/deduplication.test.js](./tests/unit/deduplication.test.js): Unit tests for question text normalization, duplicate note filtering, and skipped duplicate counts.
-- [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, CSS selectors, mobile tap shielding, and extension manifest validity.
+- [unit/templates.test.js](./tests/unit/templates.test.js): Structural integrity tests verifying card HTML templates, field placeholders, CSS design token selectors, standalone SVG accessibility, and extension manifest validity.
 - [unit/anki-compiler.test.js](./tests/unit/anki-compiler.test.js): Unit tests for template field substitution, conditional block evaluation, unknown field rejection, and raw quote injection.
 - [unit/anki-reviewer.test.js](./tests/unit/anki-reviewer.test.js): Unit tests for reviewer platform profiles, bridge dispatch spies, MathJax recording, and cross-card session storage persistence.
 - [unit/update-templates.test.js](./tests/unit/update-templates.test.js): Unit tests for template boundary extraction, fallback heuristic migration, idempotency, backup snapshots, and editor conflict handling.
