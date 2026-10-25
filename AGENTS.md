@@ -59,6 +59,7 @@ The test suite uses Node.js 24's native test runner (`node:test` and `node:asser
 - [unit/popup.test.js](./tests/unit/popup.test.js): Unit tests for configuration popup UI initialization, settings persistence, debug toggle, and active tab script injection.
 - [unit/content.test.js](./tests/unit/content.test.js): Unit tests for content script data mining, iframe messaging, UI button injection, duplicate modal workflows, and error display.
 - [integration/anki-connect.test.js](./tests/integration/anki-connect.test.js): Contract integration tests with mocked network calls verifying AnkiConnect status checks, model creation, schema migration, media caching, and batch export flows (`merge`, `overwrite`, `increment`).
+- [integration/card-lifecycle.test.js](./tests/integration/card-lifecycle.test.js): Behavioral integration tests executing Front and Back template lifecycles in the AnkiCardReviewer simulator across all 4 question types, platform bridges, grading dispatches, and tap protections.
 
 ### 4. CLI & Synchronization Scripts (located under `./scripts/`)
 
@@ -195,3 +196,6 @@ When implementing changes, future agents **must** adhere to the following rules:
 5.  **Card Template Syntax & Curly Braces Safety:**
     - Never write raw double curly braces (`{{` or `}}`) in `<script>` tags, comments, or JSDoc blocks in `front.html` or `back.html` unless referencing a real Anki field or conditional replacement.
     - Anki's template parser interprets any double curly braces as field placeholders, which causes template compilation failures if the referenced name is not an Anki note field.
+6.  **Card Template Behavioral Testing & Host Documentation Sync:**
+    - Any functional modifications or bug fixes to `./src/anki_templates/front.html` or `./src/anki_templates/back.html` must be validated with corresponding behavioral lifecycle tests in `./tests/integration/card-lifecycle.test.js`.
+    - Any changes to host bridge integrations, platform detection, or gesture handling must be kept in sync with the technical specifications and verification checklists in `./docs/anki-host-platforms.md`.
