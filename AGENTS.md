@@ -37,7 +37,7 @@ Located under `./src/anki_templates/` directory. These govern how the exported n
 
 ### 3. Automated Testing & Static Fixtures (located under `./tests/`)
 
-The test suite uses Node.js 24's native test runner (`node:test` and `node:assert/strict`) with zero external runtime dependencies.
+The test suite uses Node.js 24's native test runner (`node:test` and `node:assert/strict`) with `jsdom` as a dev-only dependency for Anki card reviewer simulation and zero external production runtime dependencies.
 
 - [helpers/utils.js](./tests/helpers/utils.js): ES module adapter re-exporting shared utilities from `src/utils.js`.
 - [helpers/mock-chrome.js](./tests/helpers/mock-chrome.js): Zero-dependency in-memory mock harness for Chrome Extension APIs (`chrome.storage`, `chrome.runtime`, `chrome.tabs`, `chrome.scripting`) and minimal DOM simulation for Node.js test execution.
