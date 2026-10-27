@@ -168,11 +168,12 @@ test("templates: styling.css rules", () => {
 		"styling.css .rubric-item should vertically center checkboxes and labels with align-items: center",
 	);
 
-	// Verify strict ceiling on !important usage (only .is-hidden utility is permitted)
+	// Verify zero !important usage across all rules in styling.css
 	const importantMatches = cssContent.match(/!important/g) || [];
-	assert.ok(
-		importantMatches.length <= 1,
-		`styling.css has ${importantMatches.length} '!important' declarations; expected at most 1`,
+	assert.equal(
+		importantMatches.length,
+		0,
+		`styling.css has ${importantMatches.length} '!important' declarations; expected 0`,
 	);
 });
 

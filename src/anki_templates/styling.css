@@ -305,7 +305,7 @@ body {
     -------------------------------------------------------------------------- */
 /* Display Utilities */
 .is-hidden {
-  display: none !important;
+  display: none;
 }
 
 /* Visually Hidden Helper (Standard accessible pattern for hidden submit triggers) */
